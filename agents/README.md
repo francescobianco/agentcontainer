@@ -7,6 +7,7 @@ Initial collection of agents organized by category.
 - `search/`: agents focused on finding information in local files.
 - `maintain/`: agents for operational snapshots and maintenance tasks.
 - `lab/`: experimental agents for test and lab environments.
+- `network/`: agents that traverse the federated tree and reason about node topology.
 
 Each file is a pure Python agent that can be sent directly with:
 

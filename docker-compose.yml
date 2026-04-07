@@ -2,7 +2,21 @@ services:
   root:
     build: .
     container_name: agentcontainer-root
-    command: ["python", "-m", "agentcontainer.server", "--config", "/app/examples/root.json"]
+    working_dir: /app
+    volumes:
+      - .:/app
+    command:
+      [
+        "agentcontainer",
+        "server",
+        "0.0.0.0:7000",
+        "--name",
+        "root",
+        "--advertise-host",
+        "root",
+        "--data-root",
+        "/app/fixtures/root"
+      ]
     ports:
       - "7000:7000"
     networks:
@@ -11,18 +25,81 @@ services:
   department-a:
     build: .
     container_name: agentcontainer-department-a
-    command: ["python", "-m", "agentcontainer.server", "--config", "/app/examples/department_a.json"]
+    working_dir: /app
+    volumes:
+      - .:/app
+    command:
+      [
+        "agentcontainer",
+        "server",
+        "0.0.0.0:7001",
+        "--name",
+        "department-a",
+        "--advertise-host",
+        "department-a",
+        "--attach",
+        "root:7000",
+        "--data-root",
+        "/app/fixtures/department_a"
+      ]
     ports:
       - "7001:7001"
+    depends_on:
+      - root
     networks:
       - agentnet
 
   department-b:
     build: .
     container_name: agentcontainer-department-b
-    command: ["python", "-m", "agentcontainer.server", "--config", "/app/examples/department_b.json"]
+    working_dir: /app
+    volumes:
+      - .:/app
+    command:
+      [
+        "agentcontainer",
+        "server",
+        "0.0.0.0:7002",
+        "--name",
+        "department-b",
+        "--advertise-host",
+        "department-b",
+        "--attach",
+        "root:7000",
+        "--data-root",
+        "/app/fixtures/department_b"
+      ]
     ports:
       - "7002:7002"
+    depends_on:
+      - root
+    networks:
+      - agentnet
+
+  lab-c:
+    build: .
+    container_name: agentcontainer-lab-c
+    working_dir: /app
+    volumes:
+      - .:/app
+    command:
+      [
+        "agentcontainer",
+        "server",
+        "0.0.0.0:7003",
+        "--name",
+        "lab-c",
+        "--advertise-host",
+        "lab-c",
+        "--attach",
+        "department-a:7001",
+        "--data-root",
+        "/app/fixtures/department_b"
+      ]
+    ports:
+      - "7003:7003"
+    depends_on:
+      - department-a
     networks:
       - agentnet
 

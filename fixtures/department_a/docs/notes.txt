@@ -1,2 +1,2 @@
-Nel dipartimento A esiste un archivio di tornei di scacchi.
-Le partite storiche vengono catalogate ogni settimana.
+Department A maintains an archive of chess tournaments.
+Historical matches are cataloged every week.

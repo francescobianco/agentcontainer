@@ -10,7 +10,7 @@ class Agent:
         if report is not None and stage and ctx.container_name == stage["name"]:
             return {"status": "returned-to-stage", "report": report}
 
-        query = payload.get("query", "scacchi")
+        query = payload.get("query", "chess")
         hits = await ctx.search_files(query, path=payload.get("path", "."), limit=25)
         report = {
             "container": ctx.container_name,

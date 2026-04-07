@@ -50,17 +50,31 @@ def _guess_stage_host(remote_host: str) -> str:
             return "127.0.0.1"
 
 
-def _make_server_config(address: str, secret: str, data_root: str | None, name: str | None) -> Config:
+def _make_server_config(
+    address: str,
+    secret: str,
+    data_root: str | None,
+    name: str | None,
+    advertise_host: str | None,
+    attach: str | None,
+) -> Config:
     host, port = _parse_target(address)
     container_name = name or f"container-{port}"
     root = str(Path(data_root or ".").resolve())
-    federation = {"name": container_name, "host": host, "port": port, "children": []}
+    federation = {
+        "name": container_name,
+        "host": advertise_host or host,
+        "port": port,
+        "children": [],
+    }
     return Config(
         container_name=container_name,
         listen_host=host,
         listen_port=port,
         admin_secret=secret,
         data_root=root,
+        advertise_host=advertise_host or host,
+        parent_target=attach,
         federation=federation,
         allow_subprocess=True,
     )
@@ -80,6 +94,15 @@ def _build_stage_network(stage_name: str, stage_host: str, stage_port: int, targ
             }
         ],
     }
+
+
+async def _discover_remote_container_name(host: str, port: int, fallback: str | None = None) -> str:
+    identity = ensure_identity_config(Path.cwd())
+    response = await send_message(host, port, build_message("describe_container", identity, {}))
+    if response.get("status") != "ok":
+        return fallback or "target"
+    result = response.get("result", {})
+    return str(result.get("container_name") or fallback or "target")
 
 
 async def _start_runtime_server(config: Config) -> tuple[AgentRuntime, asyncio.base_events.Server]:
@@ -225,10 +248,20 @@ async def _run_server(args: argparse.Namespace) -> None:
     if args.config:
         await serve(args.config)
         return
-    config = _make_server_config(args.address, args.secret, args.data_root, args.name)
+    config = _make_server_config(args.address, args.secret, args.data_root, args.name, args.advertise_host, args.attach)
     runtime, server = await _start_runtime_server(config)
     runtime.log(f"listening on {config.listen_host}:{config.listen_port}")
     async with server:
+        if config.parent_target:
+            for attempt in range(1, 16):
+                try:
+                    response = await runtime.attach_to_parent()
+                    if response and response.get("status") == "ok":
+                        runtime.log(f"attach completed to parent {config.parent_target}")
+                        break
+                except Exception as exc:  # noqa: BLE001
+                    runtime.log(f"attach attempt {attempt} to parent {config.parent_target} failed: {exc}")
+                    await asyncio.sleep(1.0)
         await server.serve_forever()
 
 
@@ -237,11 +270,12 @@ async def _run_send(args: argparse.Namespace) -> None:
     connect_host = _normalize_connect_host(host)
     stage_port = args.stage_port or _allocate_tcp_port()
     stage_host = args.stage_host or _guess_stage_host(connect_host)
+    target_name = args.target_name or await _discover_remote_container_name(connect_host, port, "target")
     await _stage_and_send(
         source_code=Path(args.agent_file).read_text(encoding="utf-8"),
         target_host=connect_host,
         target_port=port,
-        target_name=args.target_name,
+        target_name=target_name,
         target_secret=args.secret,
         activate_payload=json.loads(args.activate or "{}"),
         stage_name=args.stage_name,
@@ -309,6 +343,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     server_cmd.add_argument("--secret", default=DEFAULT_SECRET, help="Admin secret for the server")
     server_cmd.add_argument("--data-root", help="Directory exposed by the container")
     server_cmd.add_argument("--name", help="Container name")
+    server_cmd.add_argument("--advertise-host", help="Host name published to other containers in the federation")
+    server_cmd.add_argument("--attach", help="Parent container in HOST:PORT format to attach this container as a child")
 
     send_cmd = subparsers.add_parser("send", help="Stage a Python agent locally and send it to a target container")
     send_cmd.add_argument("agent_file")
@@ -316,7 +352,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     send_cmd.add_argument("--secret", default=DEFAULT_SECRET, help="Remote admin secret")
     send_cmd.add_argument("--activate", help="JSON payload for the remote activation")
     send_cmd.add_argument("--stage-name", default="stage", help="Name of the local stage container")
-    send_cmd.add_argument("--target-name", default="target", help="Target node name exposed to the agent")
+    send_cmd.add_argument("--target-name", help="Target node name exposed to the agent; default is discovered remotely")
     send_cmd.add_argument("--stage-host", help="Host or IP that the remote node can use to return to the local stage")
     send_cmd.add_argument("--stage-port", type=int, default=0, help="Local stage port, 0 means auto")
     send_cmd.add_argument("--timeout", type=float, help="Auto-stop timeout for the stage in seconds")

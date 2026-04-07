@@ -15,7 +15,7 @@ class Agent:
         return await self._handle(ctx, payload)
 
     async def _handle(self, ctx, payload):
-        query = payload.get("query", "scacchi")
+        query = payload.get("query", "chess")
         incoming_visited = payload.get("visited", [])
         if incoming_visited:
             self.visited = list(dict.fromkeys(incoming_visited + self.visited))

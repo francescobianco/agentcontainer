@@ -44,7 +44,7 @@ class AgentContext:
     async def networks(self) -> dict[str, Any]:
         record = self._runtime.agents[self.agent_id]
         self._runtime.log_agent_event(self.agent_id, "read network topology")
-        return record.metadata.get("network", self._runtime.config.federation)
+        return self._runtime.effective_network(record)
 
     async def capabilities(self) -> list[str]:
         self._runtime.log_agent_event(self.agent_id, "inspected capabilities")
@@ -294,7 +294,9 @@ class AgentRuntime:
         return {
             "container_name": self.config.container_name,
             "listen_host": self.config.listen_host,
+            "advertise_host": self.config.advertise_host or self.config.listen_host,
             "listen_port": self.config.listen_port,
+            "parent_target": self.config.parent_target,
             "children": self.config.federation.get("children", []),
         }
 
@@ -312,6 +314,21 @@ class AgentRuntime:
             "files": files,
             "allow_subprocess": self.config.allow_subprocess,
         }
+
+    def effective_network(self, record: AgentRecord) -> dict[str, Any]:
+        overlay = record.metadata.get("network")
+        if not overlay:
+            return self.config.federation
+
+        def inject(node: dict[str, Any]) -> dict[str, Any]:
+            if node.get("name") == self.config.container_name:
+                return self.config.federation
+            return {
+                **node,
+                "children": [inject(child) for child in node.get("children", [])],
+            }
+
+        return inject(overlay)
 
     async def dispatch_agent(
         self,
@@ -342,7 +359,7 @@ class AgentRuntime:
         activate_payload: dict[str, Any],
     ) -> dict[str, Any]:
         record = self.resolve_agent_record(agent_id)
-        node = self._find_destination(destination, record.metadata.get("network"))
+        node = self._find_destination(destination, self.effective_network(record))
         message = {
             "type": "receive_agent",
             "sender": self.identity.private_key["identity"],
@@ -392,6 +409,30 @@ class AgentRuntime:
             writer.close()
             await writer.wait_closed()
 
+    def upsert_child_tree(self, child_tree: dict[str, Any]) -> None:
+        children = self.config.federation.setdefault("children", [])
+        for index, current in enumerate(children):
+            if current.get("name") == child_tree.get("name"):
+                children[index] = child_tree
+                return
+        children.append(child_tree)
+
+    async def attach_to_parent(self) -> dict[str, Any] | None:
+        if not self.config.parent_target:
+            return None
+        host, port = self.config.parent_target.rsplit(":", 1)
+        message = {
+            "type": "attach_child",
+            "sender": self.identity.private_key["identity"],
+            "timestamp": int(time.time()),
+            "nonce": f"attach-{self.config.container_name}-{time.time()}",
+            "payload": {
+                "child_tree": self.config.federation,
+            },
+        }
+        self.log(f"attaching to parent {self.config.parent_target}")
+        return await self._send_remote(host, int(port), attach_signature(message, self.identity))
+
     async def handle_message(self, message: dict[str, Any]) -> dict[str, Any]:
         message_type = message["type"]
         payload = message.get("payload", {})
@@ -427,6 +468,13 @@ class AgentRuntime:
                 metadata_patch=payload.get("metadata_patch"),
             )
             return {"status": "ok", "result": result}
+        if message_type == "attach_child":
+            child_tree = payload["child_tree"]
+            self.upsert_child_tree(child_tree)
+            self.log(f"attached child name={child_tree.get('name')} host={child_tree.get('host')} port={child_tree.get('port')}")
+            if self.config.parent_target:
+                await self.attach_to_parent()
+            return {"status": "ok", "result": self.describe_container()}
         if message_type == "invoke_agent":
             result = await self.invoke_agent(payload["agent_id"], payload.get("message", {}))
             return {"status": "ok", "result": result}
