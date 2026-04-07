@@ -133,7 +133,7 @@ def _print_stage_summary(label: str, response: dict[str, Any]) -> None:
         print(f"{label}: error: {response.get('error', 'unknown error')}", flush=True)
         return
     result = response.get("result", {})
-    agent_id = result.get("agent_id", "?")
+    agent_id = result.get("instance_id") or result.get("agent_id", "?")
     print(f"{label}: ok agent={agent_id}", flush=True)
     report = find_return_report(result)
     if isinstance(report, dict):
@@ -193,7 +193,7 @@ async def _stage_and_send(
             if deploy_response.get("status") != "ok":
                 print(f"stage deploy failed: {deploy_response.get('error', 'unknown error')}", flush=True)
                 raise SystemExit(1)
-            agent_id = deploy_response["result"]["agent_id"]
+            agent_id = deploy_response["result"].get("instance_id") or deploy_response["result"]["agent_id"]
             print(f"stage ready: agent={agent_id} stage={stage_host}:{stage_port}", flush=True)
 
             dispatch_response = await send_message(

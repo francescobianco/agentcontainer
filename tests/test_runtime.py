@@ -35,6 +35,15 @@ class Agent:
         return {"event": "message", "container": ctx.container_name, "payload": payload}
 """
 
+OTHER_AGENT_SOURCE = """
+AGENT_ID = "other-agent"
+AGENT_SECRET = "other-agent-secret"
+
+class Agent:
+    async def on_activate(self, ctx, payload):
+        return {"event": "activate", "container": ctx.container_name, "payload": payload}
+"""
+
 
 def signed(identity, message_type: str, payload: dict) -> dict:
     return attach_signature(
@@ -81,14 +90,15 @@ def test_deploy_and_invoke():
                     signed(identity, "deploy_agent", {"source_code": AGENT_SOURCE, "activate_payload": {"hello": "world"}}),
                 )
                 assert deploy["status"] == "ok"
+                instance_id = deploy["result"]["instance_id"]
                 invoke = await send_message(
                     "127.0.0.1",
                     7100,
-                    signed(identity, "invoke_agent", {"agent_id": "test-agent", "message": {"x": 1}}),
+                    signed(identity, "invoke_agent", {"agent_id": instance_id, "message": {"x": 1}}),
                 )
                 assert invoke["status"] == "ok"
                 assert invoke["result"]["result"]["payload"] == {"x": 1}
-                assert "test-agent" in runtime.agents
+                assert instance_id in runtime.agents
 
     asyncio.run(scenario())
 
@@ -134,24 +144,25 @@ def test_clone_and_move_between_nodes():
                     signed(identity, "deploy_agent", {"source_code": AGENT_SOURCE, "activate_payload": {}}),
                 )
                 assert deploy["status"] == "ok"
+                instance_id = deploy["result"]["instance_id"]
 
                 clone_response = await send_message(
                     "127.0.0.1",
                     7101,
-                    signed(identity, "invoke_agent", {"agent_id": "test-agent", "message": {"command": "clone"}}),
+                    signed(identity, "invoke_agent", {"agent_id": instance_id, "message": {"command": "clone"}}),
                 )
                 assert clone_response["status"] == "ok"
-                assert "test-agent" in root_runtime.agents
-                assert "test-agent" in child_runtime.agents
+                assert instance_id in root_runtime.agents
+                assert any(record.agent_id == "test-agent" for record in child_runtime.agents.values())
 
                 move_response = await send_message(
                     "127.0.0.1",
                     7101,
-                    signed(identity, "invoke_agent", {"agent_id": "test-agent", "message": {"command": "move"}}),
+                    signed(identity, "invoke_agent", {"agent_id": instance_id, "message": {"command": "move"}}),
                 )
                 assert move_response["status"] == "ok"
-                assert "test-agent" not in root_runtime.agents
-                assert "test-agent" in child_runtime.agents
+                assert instance_id not in root_runtime.agents
+                assert any(record.agent_id == "test-agent" for record in child_runtime.agents.values())
 
     asyncio.run(scenario())
 
@@ -172,6 +183,45 @@ def test_cli_server_short_syntax():
     args = parse_args(["server", "0.0.0.0:7007"])
     assert args.command == "server"
     assert args.address == "0.0.0.0:7007"
+
+
+def test_same_agent_id_gets_unique_instance_sequence():
+    async def scenario():
+        with tempfile.TemporaryDirectory() as tmp:
+            root_dir = Path(tmp) / "root"
+            (root_dir / "docs").mkdir(parents=True)
+            identity = ensure_identity_config(Path(tmp))
+            config = Config(
+                container_name="root",
+                listen_host="127.0.0.1",
+                listen_port=7105,
+                admin_secret="unused",
+                data_root=str(root_dir),
+                federation={"name": "root", "host": "127.0.0.1", "port": 7105, "children": []},
+            )
+            runtime, server = await start_runtime(config, identity)
+            async with server:
+                first = await send_message(
+                    "127.0.0.1",
+                    7105,
+                    signed(identity, "deploy_agent", {"source_code": AGENT_SOURCE, "activate_payload": {}}),
+                )
+                second = await send_message(
+                    "127.0.0.1",
+                    7105,
+                    signed(identity, "deploy_agent", {"source_code": AGENT_SOURCE, "activate_payload": {}}),
+                )
+                third = await send_message(
+                    "127.0.0.1",
+                    7105,
+                    signed(identity, "deploy_agent", {"source_code": OTHER_AGENT_SOURCE, "activate_payload": {}}),
+                )
+                assert first["result"]["instance_id"] == "test-agent#1"
+                assert second["result"]["instance_id"] == "test-agent#2"
+                assert third["result"]["instance_id"] == "other-agent#1"
+                assert len(runtime.agents) == 3
+
+    asyncio.run(scenario())
 
 
 def test_agent_can_return_to_stage():
@@ -234,6 +284,7 @@ def test_agent_can_return_to_stage():
                     ),
                 )
                 assert deploy["status"] == "ok"
+                stage_instance_id = deploy["result"]["instance_id"]
 
                 dispatch = await send_message(
                     "127.0.0.1",
@@ -242,7 +293,7 @@ def test_agent_can_return_to_stage():
                         identity,
                         "dispatch_agent",
                         {
-                            "agent_id": "visitcontainer-and-go-back",
+                            "agent_id": stage_instance_id,
                             "destination": "target",
                             "mode": "move",
                             "activate_payload": {},
@@ -259,9 +310,10 @@ def test_agent_can_return_to_stage():
                     ),
                 )
                 assert dispatch["status"] == "ok"
-                assert "visitcontainer-and-go-back" in stage_runtime.agents
-                assert "visitcontainer-and-go-back" not in target_runtime.agents
-                returned = stage_runtime.agents["visitcontainer-and-go-back"].last_result
+                assert any(record.agent_id == "visitcontainer-and-go-back" for record in stage_runtime.agents.values())
+                assert not any(record.agent_id == "visitcontainer-and-go-back" for record in target_runtime.agents.values())
+                returned_record = next(record for record in stage_runtime.agents.values() if record.agent_id == "visitcontainer-and-go-back")
+                returned = returned_record.last_result
                 assert returned["status"] == "returned-to-stage"
                 assert returned["report"]["container"] == "target"
 

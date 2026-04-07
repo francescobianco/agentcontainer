@@ -19,6 +19,8 @@ from .protocol import read_message, write_message
 @dataclass(slots=True)
 class AgentRecord:
     agent_id: str
+    sequence: int
+    instance_id: str
     secret: str
     source_code: str
     instance: Any
@@ -185,12 +187,28 @@ class AgentRuntime:
         self.identity = identity or ensure_identity_config(Path.cwd())
         self.data_root = Path(config.data_root).resolve()
         self.agents: dict[str, AgentRecord] = {}
+        self._agent_sequences: dict[str, int] = {}
 
     def log(self, message: str) -> None:
         print(f"[{self.config.container_name}] {message}", flush=True)
 
     def log_agent_event(self, agent_id: str, message: str) -> None:
         self.log(f"agent={agent_id} {message}")
+
+    def next_sequence(self, agent_id: str) -> int:
+        sequence = self._agent_sequences.get(agent_id, 0) + 1
+        self._agent_sequences[agent_id] = sequence
+        return sequence
+
+    def resolve_agent_record(self, agent_ref: str) -> AgentRecord:
+        if agent_ref in self.agents:
+            return self.agents[agent_ref]
+        matches = [record for record in self.agents.values() if record.agent_id == agent_ref]
+        if not matches:
+            raise KeyError(agent_ref)
+        if len(matches) > 1:
+            raise ValueError(f"agent id {agent_ref} is ambiguous; use instance id")
+        return matches[0]
 
     def resolve_path(self, path: str) -> Path:
         candidate = (self.data_root / path).resolve()
@@ -222,38 +240,50 @@ class AgentRuntime:
         manifest = self.parse_agent_manifest(source_code)
         module = self._load_module(source_code, f"agent_{manifest['agent_id']}")
         instance = module.Agent()
+        sequence = self.next_sequence(manifest["agent_id"])
+        instance_id = f"{manifest['agent_id']}#{sequence}"
         record = AgentRecord(
             agent_id=manifest["agent_id"],
+            sequence=sequence,
+            instance_id=instance_id,
             secret=manifest["agent_secret"],
             source_code=source_code,
             instance=instance,
             module=module,
             metadata={"agent_name": manifest["agent_name"], **(metadata or {})},
         )
-        self.agents[record.agent_id] = record
+        self.agents[record.instance_id] = record
         self.log_agent_event(
-            record.agent_id,
+            record.instance_id,
             f"loaded source and entered container mode={'activate' if activate_payload is not None else 'resident'}",
         )
         if activate_payload is not None and hasattr(instance, "on_activate"):
-            ctx = AgentContext(self, record.agent_id)
-            self.log_agent_event(record.agent_id, "executing on_activate")
+            ctx = AgentContext(self, record.instance_id)
+            self.log_agent_event(record.instance_id, "executing on_activate")
             record.last_result = await instance.on_activate(ctx, activate_payload)
-        return {"agent_id": record.agent_id, "status": "active", "activate_result": record.last_result}
+        return {
+            "agent_id": record.agent_id,
+            "instance_id": record.instance_id,
+            "sequence": record.sequence,
+            "status": "active",
+            "activate_result": record.last_result,
+        }
 
     async def invoke_agent(self, agent_id: str, message: dict[str, Any]) -> dict[str, Any]:
-        record = self.agents[agent_id]
+        record = self.resolve_agent_record(agent_id)
         if not hasattr(record.instance, "on_message"):
             raise ValueError("agent does not implement on_message")
-        ctx = AgentContext(self, agent_id)
-        self.log_agent_event(agent_id, "executing on_message")
+        ctx = AgentContext(self, record.instance_id)
+        self.log_agent_event(record.instance_id, "executing on_message")
         record.last_result = await record.instance.on_message(ctx, message)
-        return {"agent_id": agent_id, "result": record.last_result}
+        return {"agent_id": record.agent_id, "instance_id": record.instance_id, "result": record.last_result}
 
     def list_agents(self) -> list[dict[str, Any]]:
         return [
             {
                 "agent_id": record.agent_id,
+                "instance_id": record.instance_id,
+                "sequence": record.sequence,
                 "agent_name": record.metadata.get("agent_name", record.agent_id),
                 "last_result": record.last_result,
             }
@@ -292,12 +322,12 @@ class AgentRuntime:
         activate_payload: dict[str, Any],
         metadata_patch: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        record = self.agents[agent_id]
+        record = self.resolve_agent_record(agent_id)
         if metadata_patch:
             record.metadata.update(metadata_patch)
-        self.log_agent_event(agent_id, f"dispatching mode={mode} destination={destination}")
+        self.log_agent_event(record.instance_id, f"dispatching mode={mode} destination={destination}")
         return await self.transfer_agent(
-            agent_id=agent_id,
+            agent_id=record.instance_id,
             destination=destination,
             mode=mode,
             activate_payload=activate_payload,
@@ -311,7 +341,7 @@ class AgentRuntime:
         mode: str,
         activate_payload: dict[str, Any],
     ) -> dict[str, Any]:
-        record = self.agents[agent_id]
+        record = self.resolve_agent_record(agent_id)
         node = self._find_destination(destination, record.metadata.get("network"))
         message = {
             "type": "receive_agent",
@@ -333,13 +363,13 @@ class AgentRuntime:
             },
         }
         signed = attach_signature(message, self.identity)
-        self.log_agent_event(agent_id, f"sending transfer mode={mode} destination={node['name']} host={node['host']} port={node['port']}")
+        self.log_agent_event(record.instance_id, f"sending transfer mode={mode} destination={node['name']} host={node['host']} port={node['port']}")
         response = await self._send_remote(node["host"], int(node["port"]), signed)
         if mode == "move" and response.get("status") == "ok":
-            current = self.agents.get(agent_id)
+            current = self.agents.get(record.instance_id)
             if current is record:
-                self.log_agent_event(agent_id, "removing local instance after successful move")
-                self.agents.pop(agent_id, None)
+                self.log_agent_event(record.instance_id, "removing local instance after successful move")
+                self.agents.pop(record.instance_id, None)
         return response
 
     def _find_destination(self, destination: str, network: dict[str, Any] | None = None) -> dict[str, Any]:
