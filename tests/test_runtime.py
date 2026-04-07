@@ -9,6 +9,7 @@ from agentcontainer.auth import attach_signature
 from agentcontainer.client import send_message
 from agentcontainer.cli import parse_args
 from agentcontainer.config import Config
+from agentcontainer.identity import ensure_identity_config
 from agentcontainer.server import handle_client
 from agentcontainer.runtime import AgentRuntime
 
@@ -35,7 +36,7 @@ class Agent:
 """
 
 
-def signed(secret: str, message_type: str, payload: dict) -> dict:
+def signed(identity, message_type: str, payload: dict) -> dict:
     return attach_signature(
         {
             "type": message_type,
@@ -44,12 +45,12 @@ def signed(secret: str, message_type: str, payload: dict) -> dict:
             "nonce": f"{message_type}-{time.time()}",
             "payload": payload,
         },
-        secret,
+        identity,
     )
 
 
-async def start_runtime(config: Config):
-    runtime = AgentRuntime(config)
+async def start_runtime(config: Config, identity):
+    runtime = AgentRuntime(config, identity)
     server = await asyncio.start_server(
         lambda reader, writer: handle_client(runtime, reader, writer),
         host=config.listen_host,
@@ -63,6 +64,7 @@ def test_deploy_and_invoke():
         with tempfile.TemporaryDirectory() as tmp:
             root_dir = Path(tmp) / "root"
             (root_dir / "docs").mkdir(parents=True)
+            identity = ensure_identity_config(Path(tmp))
             config = Config(
                 container_name="root",
                 listen_host="127.0.0.1",
@@ -71,18 +73,18 @@ def test_deploy_and_invoke():
                 data_root=str(root_dir),
                 federation={"name": "root", "host": "127.0.0.1", "port": 7100, "children": []},
             )
-            runtime, server = await start_runtime(config)
+            runtime, server = await start_runtime(config, identity)
             async with server:
                 deploy = await send_message(
                     "127.0.0.1",
                     7100,
-                    signed("root-secret", "deploy_agent", {"source_code": AGENT_SOURCE, "activate_payload": {"hello": "world"}}),
+                    signed(identity, "deploy_agent", {"source_code": AGENT_SOURCE, "activate_payload": {"hello": "world"}}),
                 )
                 assert deploy["status"] == "ok"
                 invoke = await send_message(
                     "127.0.0.1",
                     7100,
-                    signed("root-secret", "invoke_agent", {"agent_id": "test-agent", "message": {"x": 1}}),
+                    signed(identity, "invoke_agent", {"agent_id": "test-agent", "message": {"x": 1}}),
                 )
                 assert invoke["status"] == "ok"
                 assert invoke["result"]["result"]["payload"] == {"x": 1}
@@ -98,6 +100,7 @@ def test_clone_and_move_between_nodes():
             child_dir = Path(tmp) / "child"
             (root_dir / "docs").mkdir(parents=True)
             (child_dir / "docs").mkdir(parents=True)
+            identity = ensure_identity_config(Path(tmp))
 
             root_config = Config(
                 container_name="root",
@@ -121,21 +124,21 @@ def test_clone_and_move_between_nodes():
                 federation={"name": "child", "host": "127.0.0.1", "port": 7102, "children": []},
             )
 
-            root_runtime, root_server = await start_runtime(root_config)
-            child_runtime, child_server = await start_runtime(child_config)
+            root_runtime, root_server = await start_runtime(root_config, identity)
+            child_runtime, child_server = await start_runtime(child_config, identity)
 
             async with root_server, child_server:
                 deploy = await send_message(
                     "127.0.0.1",
                     7101,
-                    signed("root-secret", "deploy_agent", {"source_code": AGENT_SOURCE, "activate_payload": {}}),
+                    signed(identity, "deploy_agent", {"source_code": AGENT_SOURCE, "activate_payload": {}}),
                 )
                 assert deploy["status"] == "ok"
 
                 clone_response = await send_message(
                     "127.0.0.1",
                     7101,
-                    signed("root-secret", "invoke_agent", {"agent_id": "test-agent", "message": {"command": "clone"}}),
+                    signed(identity, "invoke_agent", {"agent_id": "test-agent", "message": {"command": "clone"}}),
                 )
                 assert clone_response["status"] == "ok"
                 assert "test-agent" in root_runtime.agents
@@ -144,7 +147,7 @@ def test_clone_and_move_between_nodes():
                 move_response = await send_message(
                     "127.0.0.1",
                     7101,
-                    signed("root-secret", "invoke_agent", {"agent_id": "test-agent", "message": {"command": "move"}}),
+                    signed(identity, "invoke_agent", {"agent_id": "test-agent", "message": {"command": "move"}}),
                 )
                 assert move_response["status"] == "ok"
                 assert "test-agent" not in root_runtime.agents

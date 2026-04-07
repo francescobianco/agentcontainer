@@ -12,6 +12,7 @@ from typing import Any
 
 from .client import build_message, send_message
 from .config import Config
+from .identity import ensure_identity_config
 from .server import handle_client, serve
 from .runtime import AgentRuntime
 
@@ -146,6 +147,7 @@ async def _stage_and_send(
     timeout: float | None,
 ) -> None:
     with tempfile.TemporaryDirectory(prefix="agentcontainer-stage-") as tmp:
+        identity = ensure_identity_config(Path.cwd())
         stage_secret = secrets.token_hex(16)
         stage_network = _build_stage_network(stage_name, stage_host, stage_port, target_name, target_host, target_port)
         stage_config = Config(
@@ -164,7 +166,7 @@ async def _stage_and_send(
                 stage_port,
                 build_message(
                     "deploy_agent",
-                    stage_secret,
+                    identity,
                     {
                         "source_code": source_code,
                         "activate_payload": None,
@@ -186,7 +188,7 @@ async def _stage_and_send(
                 stage_port,
                 build_message(
                     "dispatch_agent",
-                    stage_secret,
+                    identity,
                     {
                         "agent_id": agent_id,
                         "destination": target_name,
@@ -269,14 +271,15 @@ async def _run_local(args: argparse.Namespace) -> None:
 async def _run_control(args: argparse.Namespace) -> None:
     host, port = _parse_target(args.target)
     host = _normalize_connect_host(host)
+    identity = ensure_identity_config(Path.cwd())
     if args.command == "invoke":
-        message = build_message("invoke_agent", args.secret, {"agent_id": args.agent_id, "message": json.loads(args.message or "{}")})
+        message = build_message("invoke_agent", identity, {"agent_id": args.agent_id, "message": json.loads(args.message or "{}")})
     elif args.command == "list-agents":
-        message = build_message("list_agents", args.secret, {})
+        message = build_message("list_agents", identity, {})
     elif args.command == "tree":
-        message = build_message("network_tree", args.secret, {})
+        message = build_message("network_tree", identity, {})
     elif args.command == "describe":
-        message = build_message("describe_container", args.secret, {})
+        message = build_message("describe_container", identity, {})
     else:
         raise ValueError(f"unsupported command {args.command}")
     response = await send_message(host, port, message)
@@ -340,6 +343,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     try:
+        ensure_identity_config(Path.cwd())
         if args.command == "server":
             asyncio.run(_run_server(args))
             return

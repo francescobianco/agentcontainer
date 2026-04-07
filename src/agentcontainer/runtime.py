@@ -10,8 +10,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .auth import attach_signature
+from .auth import attach_signature, compute_agent_hmac, verify_agent_hmac
 from .config import Config
+from .identity import IdentityConfig, ensure_identity_config
 from .protocol import read_message, write_message
 
 
@@ -169,8 +170,9 @@ class AgentContext:
 
 
 class AgentRuntime:
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, identity: IdentityConfig | None = None) -> None:
         self.config = config
+        self.identity = identity or ensure_identity_config(Path.cwd())
         self.data_root = Path(config.data_root).resolve()
         self.agents: dict[str, AgentRecord] = {}
 
@@ -293,18 +295,24 @@ class AgentRuntime:
         node = self._find_destination(destination, record.metadata.get("network"))
         message = {
             "type": "receive_agent",
-            "sender": agent_id,
+            "sender": self.identity.private_key["identity"],
             "timestamp": int(time.time()),
             "nonce": f"{agent_id}-{mode}-{node['name']}",
             "payload": {
                 "source_code": record.source_code,
                 "activate_payload": activate_payload,
                 "mode": mode,
-                "agent_secret": record.secret,
+                "agent_hmac": compute_agent_hmac(
+                    record.source_code,
+                    activate_payload,
+                    record.metadata,
+                    mode,
+                    record.secret,
+                ),
                 "agent_metadata": record.metadata,
             },
         }
-        signed = attach_signature(message, record.secret)
+        signed = attach_signature(message, self.identity)
         response = await self._send_remote(node["host"], int(node["port"]), signed)
         if mode == "move" and response.get("status") == "ok":
             self.agents.pop(agent_id, None)
@@ -330,19 +338,6 @@ class AgentRuntime:
             writer.close()
             await writer.wait_closed()
 
-    def resolve_secret_for_message(self, message: dict[str, Any]) -> str:
-        sender = message.get("sender")
-        if sender == "admin":
-            return self.config.admin_secret
-        if sender in self.agents:
-            return self.agents[sender].secret
-        if message.get("type") == "receive_agent":
-            secret = message.get("payload", {}).get("agent_secret")
-            if not isinstance(secret, str) or not secret:
-                raise ValueError("receive_agent requires payload.agent_secret")
-            return secret
-        raise ValueError(f"unknown sender {sender}")
-
     async def handle_message(self, message: dict[str, Any]) -> dict[str, Any]:
         message_type = message["type"]
         payload = message.get("payload", {})
@@ -354,6 +349,15 @@ class AgentRuntime:
             )
             return {"status": "ok", "result": result}
         if message_type == "receive_agent":
+            manifest = self.parse_agent_manifest(payload["source_code"])
+            verify_agent_hmac(
+                source_code=payload["source_code"],
+                activate_payload=payload.get("activate_payload", {}),
+                metadata=payload.get("agent_metadata"),
+                mode=payload.get("mode", "move"),
+                secret=manifest["agent_secret"],
+                provided_hmac=payload.get("agent_hmac"),
+            )
             result = await self.deploy_agent(
                 payload["source_code"],
                 payload.get("activate_payload", {}),

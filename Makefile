@@ -2,12 +2,13 @@ PYTHON ?= python3
 PIP ?= $(PYTHON) -m pip
 VENV ?= .venv
 
-.PHONY: help install install-venv venv test pdf server-root server-a server-b docker-up docker-down docker-logs demo-send demo-run
+.PHONY: help clean-install install install-venv venv test pdf server-root server-a server-b docker-up docker-down docker-logs demo-send demo-run
 
 help:
 	@printf '%s\n' \
 	'Targets:' \
-	'  install     Install the CLI with pipx, fallback to .venv + ./bin/agentcontainer' \
+	'  clean-install Remove prior installs/build artifacts and reinstall from scratch' \
+	'  install     Clean reinstall with pipx, fallback to .venv + ./bin/agentcontainer' \
 	'  install-venv Create a local virtualenv and install the project there' \
 	'  venv        Create local virtualenv only' \
 	'  test        Run pytest suite' \
@@ -24,9 +25,17 @@ help:
 venv:
 	$(PYTHON) -m venv $(VENV)
 
-install:
+clean-install:
+	@rm -rf build dist .pytest_cache .mypy_cache src/*.egg-info src/agentcontainer.egg-info __pycache__
+	@find . -type d -name __pycache__ -prune -exec rm -rf {} +
 	@if command -v pipx >/dev/null 2>&1; then \
-		pipx install --force .; \
+		pipx uninstall agentcontainer >/dev/null 2>&1 || true; \
+	fi
+	@rm -rf $(VENV) bin
+
+install: clean-install
+	@if command -v pipx >/dev/null 2>&1; then \
+		pipx install .; \
 		printf '%s\n' 'Installed with pipx. If needed, ensure $$HOME/.local/bin is in PATH.'; \
 	else \
 		$(MAKE) install-venv; \

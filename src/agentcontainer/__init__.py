@@ -5,6 +5,7 @@ __all__ = [
     "cli",
     "client",
     "config",
+    "identity",
     "protocol",
     "runtime",
     "server",

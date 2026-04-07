@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .auth import attach_signature
+from .identity import IdentityConfig, ensure_identity_config
 from .protocol import read_message, write_message
 
 
@@ -22,7 +23,7 @@ async def send_message(host: str, port: int, message: dict[str, Any]) -> dict[st
         await writer.wait_closed()
 
 
-def build_message(message_type: str, secret: str, payload: dict[str, Any], sender: str = "admin") -> dict[str, Any]:
+def build_message(message_type: str, signer: str | IdentityConfig, payload: dict[str, Any], sender: str = "admin") -> dict[str, Any]:
     message = {
         "type": message_type,
         "sender": sender,
@@ -30,25 +31,26 @@ def build_message(message_type: str, secret: str, payload: dict[str, Any], sende
         "nonce": str(uuid.uuid4()),
         "payload": payload,
     }
-    return attach_signature(message, secret)
+    return attach_signature(message, signer)
 
 
 async def run_client(args: argparse.Namespace) -> dict[str, Any]:
+    identity = ensure_identity_config(Path.cwd())
     if args.command == "deploy":
         payload = {
             "source_code": Path(args.agent_file).read_text(encoding="utf-8"),
             "activate_payload": json.loads(args.activate or "{}"),
         }
-        message = build_message("deploy_agent", args.secret, payload)
+        message = build_message("deploy_agent", identity, payload)
     elif args.command == "invoke":
         payload = {"agent_id": args.agent_id, "message": json.loads(args.message or "{}")}
-        message = build_message("invoke_agent", args.secret, payload)
+        message = build_message("invoke_agent", identity, payload)
     elif args.command == "list-agents":
-        message = build_message("list_agents", args.secret, {})
+        message = build_message("list_agents", identity, {})
     elif args.command == "tree":
-        message = build_message("network_tree", args.secret, {})
+        message = build_message("network_tree", identity, {})
     elif args.command == "describe":
-        message = build_message("describe_container", args.secret, {})
+        message = build_message("describe_container", identity, {})
     else:
         raise ValueError(f"unsupported command {args.command}")
     return await send_message(args.host, args.port, message)
@@ -58,7 +60,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="agentcontainer CLI client")
     parser.add_argument("--host", required=True)
     parser.add_argument("--port", required=True, type=int)
-    parser.add_argument("--secret", required=True)
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -78,6 +79,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
+    ensure_identity_config(Path.cwd())
     response = asyncio.run(run_client(args))
     print(json.dumps(response, indent=2, ensure_ascii=True))
 
