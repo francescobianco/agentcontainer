@@ -1,15 +1,14 @@
 PYTHON ?= python3
 PIP ?= $(PYTHON) -m pip
-VENV ?= .venv
-ACTIVATE = . $(VENV)/bin/activate
 
-.PHONY: help venv install test pdf server-root server-a server-b docker-up docker-down docker-logs demo-send
+.PHONY: help install install-venv venv test pdf server-root server-a server-b docker-up docker-down docker-logs demo-send demo-run
 
 help:
 	@printf '%s\n' \
 	'Targets:' \
-	'  venv        Create local virtualenv' \
-	'  install     Install package with dev dependencies into the venv' \
+	'  install     Install the CLI in the current Python environment' \
+	'  install-venv Create a local virtualenv and install the project there' \
+	'  venv        Create local virtualenv only' \
 	'  test        Run pytest suite' \
 	'  pdf         Regenerate WHITEPAPER.pdf' \
 	'  server-root Run the root container service locally' \
@@ -18,13 +17,17 @@ help:
 	'  docker-up   Start the federated Docker lab' \
 	'  docker-down Stop the federated Docker lab' \
 	'  docker-logs Tail docker compose logs' \
-	'  demo-send   Send the travelling scout to the local root node'
+	'  demo-send   Send the travelling scout to the local root node' \
+	'  demo-run    Run the travelling scout in an isolated temporary local container'
 
 venv:
 	$(PYTHON) -m venv $(VENV)
 
-install: venv
-	$(ACTIVATE) && $(PIP) install -e .[dev]
+install:
+	$(PIP) install -e .[dev]
+
+install-venv: venv
+	. $(VENV)/bin/activate && $(PIP) install -e .[dev]
 
 test:
 	PYTHONPATH=src pytest -q
@@ -51,4 +54,7 @@ docker-logs:
 	docker compose logs -f
 
 demo-send:
-	PYTHONPATH=src $(PYTHON) -m agentcontainer.cli send agents/travelling_scout.py 127.0.0.1:7000 --secret root-admin-secret --activate '{"query":"scacchi","tour":true}'
+	PYTHONPATH=src $(PYTHON) -m agentcontainer.cli send agents/demo/visitcontainer-and-go-back.py 127.0.0.1:7000
+
+demo-run:
+	PYTHONPATH=src $(PYTHON) -m agentcontainer.cli run agents/demo/visitcontainer-and-go-back.py

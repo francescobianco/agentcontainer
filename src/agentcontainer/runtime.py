@@ -39,7 +39,31 @@ class AgentContext:
         self._runtime.log(f"[agent:{self.agent_id}] {message}")
 
     async def networks(self) -> dict[str, Any]:
-        return self._runtime.config.federation
+        record = self._runtime.agents[self.agent_id]
+        return record.metadata.get("network", self._runtime.config.federation)
+
+    async def capabilities(self) -> list[str]:
+        return [
+            "log",
+            "networks",
+            "capabilities",
+            "resources",
+            "stage",
+            "return_to_stage",
+            "read_file",
+            "search_files",
+            "run",
+            "http_request",
+            "clone",
+            "move",
+        ]
+
+    async def resources(self) -> dict[str, Any]:
+        return self._runtime.describe_resources()
+
+    async def stage(self) -> dict[str, Any] | None:
+        record = self._runtime.agents[self.agent_id]
+        return record.metadata.get("stage")
 
     async def read_file(self, path: str, limit: int = 65536) -> str:
         resolved = self._runtime.resolve_path(path)
@@ -132,6 +156,17 @@ class AgentContext:
             activate_payload=activate_payload or {},
         )
 
+    async def return_to_stage(self, activate_payload: dict[str, Any] | None = None, mode: str = "move") -> dict[str, Any]:
+        stage = await self.stage()
+        if not stage:
+            raise RuntimeError("agent was not started from a stage")
+        return await self._runtime.transfer_agent(
+            agent_id=self.agent_id,
+            destination=stage["name"],
+            mode=mode,
+            activate_payload=activate_payload or {},
+        )
+
 
 class AgentRuntime:
     def __init__(self, config: Config) -> None:
@@ -163,7 +198,12 @@ class AgentRuntime:
             "agent_name": getattr(module, "AGENT_NAME", getattr(module, "AGENT_ID")),
         }
 
-    async def deploy_agent(self, source_code: str, activate_payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def deploy_agent(
+        self,
+        source_code: str,
+        activate_payload: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         manifest = self.parse_agent_manifest(source_code)
         module = self._load_module(source_code, f"agent_{manifest['agent_id']}")
         instance = module.Agent()
@@ -173,7 +213,7 @@ class AgentRuntime:
             source_code=source_code,
             instance=instance,
             module=module,
-            metadata={"agent_name": manifest["agent_name"]},
+            metadata={"agent_name": manifest["agent_name"], **(metadata or {})},
         )
         self.agents[record.agent_id] = record
         if hasattr(instance, "on_activate"):
@@ -207,6 +247,40 @@ class AgentRuntime:
             "children": self.config.federation.get("children", []),
         }
 
+    def describe_resources(self) -> dict[str, Any]:
+        files: list[str] = []
+        if self.data_root.exists():
+            for candidate in sorted(self.data_root.rglob("*")):
+                if candidate.is_file():
+                    files.append(str(candidate.relative_to(self.data_root)))
+                if len(files) >= 50:
+                    break
+        return {
+            "container": self.describe_container(),
+            "data_root": str(self.data_root),
+            "files": files,
+            "allow_subprocess": self.config.allow_subprocess,
+        }
+
+    async def dispatch_agent(
+        self,
+        *,
+        agent_id: str,
+        destination: str,
+        mode: str,
+        activate_payload: dict[str, Any],
+        metadata_patch: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        record = self.agents[agent_id]
+        if metadata_patch:
+            record.metadata.update(metadata_patch)
+        return await self.transfer_agent(
+            agent_id=agent_id,
+            destination=destination,
+            mode=mode,
+            activate_payload=activate_payload,
+        )
+
     async def transfer_agent(
         self,
         *,
@@ -216,7 +290,7 @@ class AgentRuntime:
         activate_payload: dict[str, Any],
     ) -> dict[str, Any]:
         record = self.agents[agent_id]
-        node = self._find_destination(destination)
+        node = self._find_destination(destination, record.metadata.get("network"))
         message = {
             "type": "receive_agent",
             "sender": agent_id,
@@ -227,6 +301,7 @@ class AgentRuntime:
                 "activate_payload": activate_payload,
                 "mode": mode,
                 "agent_secret": record.secret,
+                "agent_metadata": record.metadata,
             },
         }
         signed = attach_signature(message, record.secret)
@@ -235,8 +310,8 @@ class AgentRuntime:
             self.agents.pop(agent_id, None)
         return response
 
-    def _find_destination(self, destination: str) -> dict[str, Any]:
-        stack = [self.config.federation]
+    def _find_destination(self, destination: str, network: dict[str, Any] | None = None) -> dict[str, Any]:
+        stack = [network or self.config.federation]
         while stack:
             node = stack.pop()
             if not isinstance(node, dict):
@@ -275,12 +350,23 @@ class AgentRuntime:
             result = await self.deploy_agent(
                 payload["source_code"],
                 payload.get("activate_payload", {}),
+                payload.get("agent_metadata"),
             )
             return {"status": "ok", "result": result}
         if message_type == "receive_agent":
             result = await self.deploy_agent(
                 payload["source_code"],
                 payload.get("activate_payload", {}),
+                payload.get("agent_metadata"),
+            )
+            return {"status": "ok", "result": result}
+        if message_type == "dispatch_agent":
+            result = await self.dispatch_agent(
+                agent_id=payload["agent_id"],
+                destination=payload["destination"],
+                mode=payload.get("mode", "move"),
+                activate_payload=payload.get("activate_payload", {}),
+                metadata_patch=payload.get("metadata_patch"),
             )
             return {"status": "ok", "result": result}
         if message_type == "invoke_agent":

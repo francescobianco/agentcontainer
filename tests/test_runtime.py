@@ -7,6 +7,7 @@ from pathlib import Path
 
 from agentcontainer.auth import attach_signature
 from agentcontainer.client import send_message
+from agentcontainer.cli import parse_args
 from agentcontainer.config import Config
 from agentcontainer.server import handle_client
 from agentcontainer.runtime import AgentRuntime
@@ -150,3 +151,21 @@ def test_clone_and_move_between_nodes():
                 assert "test-agent" in child_runtime.agents
 
     asyncio.run(scenario())
+
+
+def test_cli_run_parsing():
+    args = parse_args(
+        [
+            "run",
+            "agents/demo/visitcontainer-and-go-back.py",
+        ]
+    )
+    assert args.command == "run"
+    assert args.agent_file == "agents/demo/visitcontainer-and-go-back.py"
+    assert args.target_name == "sandbox"
+
+
+def test_cli_server_short_syntax():
+    args = parse_args(["server", "0.0.0.0:7007"])
+    assert args.command == "server"
+    assert args.address == "0.0.0.0:7007"

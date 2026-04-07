@@ -1,10 +1,10 @@
 # agentcontainer
 
-`agentcontainer` e' un runtime TCP per agenti mobili scritti in Python. Ogni agente viene inviato come sorgente Python autenticato a livello di messaggio, viene caricato "in vivo" nel container di destinazione e puo' usare primitive host per filesystem, processi locali, rete HTTP e mobilita' tra container federati ad albero.
+`agentcontainer` e' un runtime TCP per agenti mobili scritti in Python. Ogni agente viene inviato come file Python puro autenticato a livello di messaggio, viene caricato "in vivo" nel container di destinazione e puo' usare primitive host per filesystem, processi locali, rete HTTP e mobilita' tra container federati ad albero.
 
 ## Obiettivi
 
-- Trasporto e attivazione di agenti Python come testo.
+- Trasporto e attivazione di agenti Python come file Python puri.
 - Autenticazione esplicita per ogni messaggio tramite HMAC.
 - Secret dell'agente incorporata nell'agente stesso.
 - Nessuna dipendenza da un provider LLM specifico nel container.
@@ -17,9 +17,9 @@
 Questa repository implementa una base funzionante:
 
 - Server TCP `asyncio` con protocollo JSON Lines.
-- Client CLI per deploy, invoke, inspect e tree.
+- CLI unificata con `server`, `send`, `run`, `invoke`, `tree`.
 - Loader di agenti Python con lifecycle `on_activate` e `on_message`.
-- Primitive host: `read_file`, `search_files`, `run`, `http_request`, `clone`, `move`, `networks`.
+- Primitive host: `read_file`, `search_files`, `run`, `http_request`, `clone`, `move`, `networks`, `capabilities`, `resources`, `return_to_stage`.
 - Federazione statica ad albero via file JSON di configurazione.
 - Agente di esempio `travelling_scout` che visita i nodi e cerca file che contengono una query.
 - Test automatici di autenticazione, deploy/invoke e clone/move.
@@ -71,45 +71,40 @@ class Agent:
 
 ## CLI
 
-`agentcontainer` e' anche la CLI utente da installare sul proprio PC per inviare agenti verso nodi remoti.
+`agentcontainer` e' anche la CLI utente da installare sul proprio PC per inviare agenti verso nodi remoti. Lo scambio dell'agente resta sempre il sorgente Python puro; stage, routing e autenticazione viaggiano come metadati separati dal file.
 
 Esempi:
 
 ```bash
-agentcontainer send mioagente.py 192.168.1.10:7000 --secret root-admin-secret
-agentcontainer send agents/travelling_scout.py 127.0.0.1:7000 \
-  --secret root-admin-secret \
-  --activate '{"query":"scacchi","tour":true}'
-agentcontainer invoke travelling-scout 127.0.0.1:7000 \
-  --secret root-admin-secret \
-  --message '{"action":"status"}'
-agentcontainer list-agents 127.0.0.1:7000 --secret root-admin-secret
-agentcontainer tree 127.0.0.1:7000 --secret root-admin-secret
+agentcontainer server 0.0.0.0:7007
+agentcontainer send agents/demo/visitcontainer-and-go-back.py 0.0.0.0:7007
+agentcontainer run agents/demo/visitcontainer-and-go-back.py
+agentcontainer list-agents 127.0.0.1:7007
 ```
+
+`agentcontainer server HOST:PORT` avvia un nodo con configurazione di sviluppo pronta all'uso. `agentcontainer send AGENTE.py HOST:PORT` apre automaticamente uno stage locale, spedisce il file Python puro al nodo remoto e resta appeso finche' l'agente non torna allo stage oppure finche' non premi `Ctrl+C`. `agentcontainer run AGENTE.py` fa la stessa cosa ma crea anche un nodo sandbox locale di destinazione, utile per test rapidi.
 
 Per avviare un nodo come servizio:
 
 ```bash
-agentcontainer server --config examples/root.json
+agentcontainer server 0.0.0.0:7007
 ```
 
 ## Avvio locale
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .[dev]
+make install
 pytest -q
-agentcontainer server --config examples/root.json
+agentcontainer server 0.0.0.0:7007
 ```
 
 In un altro terminale:
 
 ```bash
-agentcontainer send agents/travelling_scout.py 127.0.0.1:7000 \
-  --secret root-admin-secret \
-  --activate '{"query":"scacchi","tour":true}'
+agentcontainer send agents/demo/visitcontainer-and-go-back.py 0.0.0.0:7007
 ```
+
+Se il nodo remoto deve richiamare il tuo stage attraverso un IP diverso da quello rilevato automaticamente, usa `--stage-host`.
 
 ## Ambiente Docker federato
 
@@ -122,9 +117,7 @@ docker compose up --build
 Deploy dell'agente sul nodo root:
 
 ```bash
-agentcontainer send agents/travelling_scout.py 127.0.0.1:7000 \
-  --secret root-admin-secret \
-  --activate '{"query":"scacchi","tour":true}'
+agentcontainer send agents/demo/visitcontainer-and-go-back.py 127.0.0.1:7000 --secret root-admin-secret
 ```
 
 Lista agenti:
@@ -154,6 +147,14 @@ L'agente `travelling_scout`:
 - clona se stesso nei figli non ancora visitati;
 - puo' muoversi in un nodo specifico;
 - accumula risultati in memoria locale e li restituisce via `invoke`.
+
+L'agente [visitcontainer-and-go-back.py](/home/francesco/Develop/_/agentcontainer/agents/demo/visitcontainer-and-go-back.py):
+
+- arriva nel container target;
+- legge primitive e risorse esposte agli agenti;
+- prepara un report;
+- torna allo stage da cui era partito;
+- fa terminare automaticamente la CLI `send` o `run` quando rientra.
 
 ## Sicurezza e limiti della base
 

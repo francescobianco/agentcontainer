@@ -234,6 +234,7 @@ Questo evita lock-in architetturale e rende l'agente portabile.
 ### 8.1 Package
 
 - `auth.py`: HMAC, firma, verifica.
+- `cli.py`: CLI unificata con `server`, `send`, `run`, `invoke`.
 - `protocol.py`: framing JSON Lines.
 - `config.py`: caricamento config.
 - `runtime.py`: registry, loader, context, primitive.
@@ -257,6 +258,20 @@ Ogni PC del laboratorio esegue un `agentcontainer`. Un agente viene deployato su
 - torna i risultati parziali a ogni nodo.
 
 Questo repository implementa esattamente una versione dimostrativa di quello scenario.
+
+## 11. Modalita' di test locale
+
+La CLI include `agentcontainer run <agente.py>`.
+
+Questa modalita':
+
+- avvia un server locale temporaneo isolato;
+- espone un `data_root` locale dedicato o configurabile;
+- invia automaticamente l'agente al server appena avviato;
+- opzionalmente esegue una `invoke` subito dopo il deploy;
+- termina il server al termine del test.
+
+Lo scopo e' consentire sviluppo e debug rapido dell'agente senza dipendere da un nodo di dipartimento gia' acceso. Anche se sulla macchina esiste gia' un `agentcontainer server`, `run` resta utile per una prova isolata su una porta dedicata.
 
 ## 10. Decisioni progettuali
 
