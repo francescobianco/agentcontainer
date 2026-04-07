@@ -41,9 +41,11 @@ class AgentContext:
 
     async def networks(self) -> dict[str, Any]:
         record = self._runtime.agents[self.agent_id]
+        self._runtime.log_agent_event(self.agent_id, "read network topology")
         return record.metadata.get("network", self._runtime.config.federation)
 
     async def capabilities(self) -> list[str]:
+        self._runtime.log_agent_event(self.agent_id, "inspected capabilities")
         return [
             "log",
             "networks",
@@ -60,6 +62,7 @@ class AgentContext:
         ]
 
     async def resources(self) -> dict[str, Any]:
+        self._runtime.log_agent_event(self.agent_id, "inspected resources")
         return self._runtime.describe_resources()
 
     async def stage(self) -> dict[str, Any] | None:
@@ -68,10 +71,12 @@ class AgentContext:
 
     async def read_file(self, path: str, limit: int = 65536) -> str:
         resolved = self._runtime.resolve_path(path)
+        self._runtime.log_agent_event(self.agent_id, f"read file path={path} limit={limit}")
         return resolved.read_text(encoding="utf-8")[:limit]
 
     async def search_files(self, query: str, path: str = ".", limit: int = 100) -> list[dict[str, Any]]:
         root = self._runtime.resolve_path(path)
+        self._runtime.log_agent_event(self.agent_id, f"searched files query={query!r} path={path} limit={limit}")
         matches: list[dict[str, Any]] = []
         for candidate in root.rglob("*"):
             if not candidate.is_file():
@@ -94,6 +99,7 @@ class AgentContext:
     async def run(self, command: list[str], timeout: int = 10) -> dict[str, Any]:
         if not self._runtime.config.allow_subprocess:
             raise RuntimeError("subprocess primitive disabled")
+        self._runtime.log_agent_event(self.agent_id, f"ran command={' '.join(command)} timeout={timeout}")
         process = await asyncio.create_subprocess_exec(
             *command,
             stdout=asyncio.subprocess.PIPE,
@@ -120,6 +126,7 @@ class AgentContext:
         headers: dict[str, str] | None = None,
         timeout: int = 20,
     ) -> dict[str, Any]:
+        self._runtime.log_agent_event(self.agent_id, f"http {method.upper()} {url}")
         return await asyncio.to_thread(
             self._blocking_http_request,
             method,
@@ -142,6 +149,7 @@ class AgentContext:
             return {"status": exc.code, "body": exc.read().decode("utf-8", errors="replace"), "headers": dict(exc.headers)}
 
     async def clone(self, destination: str, activate_payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        self._runtime.log_agent_event(self.agent_id, f"cloning to destination={destination}")
         return await self._runtime.transfer_agent(
             agent_id=self.agent_id,
             destination=destination,
@@ -150,6 +158,7 @@ class AgentContext:
         )
 
     async def move(self, destination: str, activate_payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        self._runtime.log_agent_event(self.agent_id, f"moving to destination={destination}")
         return await self._runtime.transfer_agent(
             agent_id=self.agent_id,
             destination=destination,
@@ -161,6 +170,7 @@ class AgentContext:
         stage = await self.stage()
         if not stage:
             raise RuntimeError("agent was not started from a stage")
+        self._runtime.log_agent_event(self.agent_id, f"returning to stage={stage['name']} mode={mode}")
         return await self._runtime.transfer_agent(
             agent_id=self.agent_id,
             destination=stage["name"],
@@ -178,6 +188,9 @@ class AgentRuntime:
 
     def log(self, message: str) -> None:
         print(f"[{self.config.container_name}] {message}", flush=True)
+
+    def log_agent_event(self, agent_id: str, message: str) -> None:
+        self.log(f"agent={agent_id} {message}")
 
     def resolve_path(self, path: str) -> Path:
         candidate = (self.data_root / path).resolve()
@@ -218,8 +231,13 @@ class AgentRuntime:
             metadata={"agent_name": manifest["agent_name"], **(metadata or {})},
         )
         self.agents[record.agent_id] = record
+        self.log_agent_event(
+            record.agent_id,
+            f"loaded source and entered container mode={'activate' if activate_payload is not None else 'resident'}",
+        )
         if activate_payload is not None and hasattr(instance, "on_activate"):
             ctx = AgentContext(self, record.agent_id)
+            self.log_agent_event(record.agent_id, "executing on_activate")
             record.last_result = await instance.on_activate(ctx, activate_payload)
         return {"agent_id": record.agent_id, "status": "active", "activate_result": record.last_result}
 
@@ -228,6 +246,7 @@ class AgentRuntime:
         if not hasattr(record.instance, "on_message"):
             raise ValueError("agent does not implement on_message")
         ctx = AgentContext(self, agent_id)
+        self.log_agent_event(agent_id, "executing on_message")
         record.last_result = await record.instance.on_message(ctx, message)
         return {"agent_id": agent_id, "result": record.last_result}
 
@@ -276,6 +295,7 @@ class AgentRuntime:
         record = self.agents[agent_id]
         if metadata_patch:
             record.metadata.update(metadata_patch)
+        self.log_agent_event(agent_id, f"dispatching mode={mode} destination={destination}")
         return await self.transfer_agent(
             agent_id=agent_id,
             destination=destination,
@@ -313,10 +333,12 @@ class AgentRuntime:
             },
         }
         signed = attach_signature(message, self.identity)
+        self.log_agent_event(agent_id, f"sending transfer mode={mode} destination={node['name']} host={node['host']} port={node['port']}")
         response = await self._send_remote(node["host"], int(node["port"]), signed)
         if mode == "move" and response.get("status") == "ok":
             current = self.agents.get(agent_id)
             if current is record:
+                self.log_agent_event(agent_id, "removing local instance after successful move")
                 self.agents.pop(agent_id, None)
         return response
 
