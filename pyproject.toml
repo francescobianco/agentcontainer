@@ -19,8 +19,6 @@ dev = ["pytest>=8.0"]
 
 [project.scripts]
 agentcontainer = "agentcontainer.cli:main"
-agentcontainer-server = "agentcontainer.server:main"
-agentcontainer-client = "agentcontainer.client:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
