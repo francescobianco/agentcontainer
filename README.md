@@ -167,19 +167,6 @@ The agent [visitcontainer-and-go-back.py](/home/francesco/Develop/_/agentcontain
 - Local primitives are powerful. Production usage requires process sandboxing, quotas, ACLs, auditing, and network/filesystem policy controls.
 - Federation in the current base is static and configuration-driven; dynamic discovery and PKI are not included.
 
-## Main Files
-
-- [README.md](/home/francesco/Develop/_/agentcontainer/README.md)
-- [DESIGN.md](/home/francesco/Develop/_/agentcontainer/DESIGN.md)
-- [pyproject.toml](/home/francesco/Develop/_/agentcontainer/pyproject.toml)
-- [src/agentcontainer/server.py](/home/francesco/Develop/_/agentcontainer/src/agentcontainer/server.py)
-- [src/agentcontainer/runtime.py](/home/francesco/Develop/_/agentcontainer/src/agentcontainer/runtime.py)
-- [src/agentcontainer/client.py](/home/francesco/Develop/_/agentcontainer/src/agentcontainer/client.py)
-- [agents/demo/travelling_scout.py](/home/francesco/Develop/_/agentcontainer/agents/demo/travelling_scout.py)
-- [docker-compose.yml](/home/francesco/Develop/_/agentcontainer/docker-compose.yml)
-- [scripts/generate_whitepaper_pdf.py](/home/francesco/Develop/_/agentcontainer/scripts/generate_whitepaper_pdf.py)
-- [WHITEPAPER.pdf](/home/francesco/Develop/_/agentcontainer/WHITEPAPER.pdf)
-
 ## Whitepaper
 
 The whitepaper source is in [WHITEPAPER.md](/home/francesco/Develop/_/agentcontainer/WHITEPAPER.md), and the PDF is generated with:

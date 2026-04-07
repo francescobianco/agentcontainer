@@ -51,7 +51,7 @@ def _guess_stage_host(remote_host: str) -> str:
 
 def _make_server_config(address: str, secret: str, data_root: str | None, name: str | None) -> Config:
     host, port = _parse_target(address)
-    container_name = name or f"node-{port}"
+    container_name = name or f"container-{port}"
     root = str(Path(data_root or ".").resolve())
     federation = {"name": container_name, "host": host, "port": port, "children": []}
     return Config(

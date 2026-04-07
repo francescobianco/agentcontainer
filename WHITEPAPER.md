@@ -2,7 +2,7 @@
 
 ## Abstract
 
-agentcontainer is a transport and execution substrate for mobile software agents represented as authenticated Python source files. Each agent carries its own identity and secret, can be deployed as live code into a remote TCP container, and can later clone or move across a federated tree of containers. The container provides operating primitives, not an opinionated LLM backend. This decoupling allows agents to remain autonomous in their choice of reasoning engines and external APIs.
+agentcontainer is a transport and execution substrate for mobile software agents represented as authenticated Python source files. Each agent can be deployed as live code into a remote TCP container, can later clone or move across a federated tree of containers, and can report back to the local stage from which it was launched. The container provides operating primitives, not an opinionated LLM backend. This decoupling allows agents to remain autonomous in their choice of reasoning engines and external APIs.
 
 ## 1. Problem Statement
 
@@ -13,7 +13,7 @@ Modern AI systems are usually centralized around a fixed inference endpoint and 
 - agents need local system access near the data they inspect;
 - operators want a neutral substrate instead of a monolithic "AI platform".
 
-agentcontainer addresses this by defining a node that accepts authenticated Python agents as text, loads them dynamically, and gives them a set of explicit host primitives for file access, process execution, HTTP egress, and mobility.
+agentcontainer addresses this by defining a node that accepts authenticated Python agents as text, loads them dynamically, and gives them a set of explicit host primitives for file access, process execution, HTTP egress, introspection, and mobility.
 
 ## 2. Design Principles
 
@@ -27,11 +27,13 @@ Third, the container is intentionally neutral regarding LLM providers. Agents ma
 
 Fourth, federation is hierarchical. A tree is operationally simpler than a full mesh and maps well to organizations such as departments, labs, and workstations.
 
-Fifth, the first implementation should optimize for conceptual clarity. Stronger isolation, policy, and cryptographic identity can be layered later.
+Fifth, a launch stage is a first-class concept in the operator workflow. An agent can start from a local stage, travel to a destination container, and return to the stage with a result or inspection report.
+
+Sixth, the first implementation should optimize for conceptual clarity. Stronger isolation, policy, and cryptographic identity can be layered later.
 
 ## 3. System Model
 
-An agentcontainer node exposes a TCP port. Clients and agents send JSON Lines messages. Each message contains a timestamp, a nonce, a sender identity, a payload, and an HMAC signature. Administrative messages are authenticated with an admin secret. Agent mobility messages are authenticated with the secret embedded in the agent source.
+An agentcontainer node exposes a TCP port. Clients and agents send JSON Lines messages. Each message contains a timestamp, a nonce, a sender identity, a payload, and a signature. Messages are explicitly signed at the application level instead of relying on a transport session.
 
 The node maintains an in-memory registry of live agents. An agent source file defines at minimum:
 
@@ -39,7 +41,7 @@ The node maintains an in-memory registry of live agents. An agent source file de
 - AGENT_SECRET
 - Agent class
 
-The Agent class may implement an activation hook and a message handler. Once loaded, the agent receives a runtime context object that exposes host primitives.
+The Agent class may implement an activation hook and a message handler. Once loaded, the agent receives a runtime context object that exposes host primitives such as file search, file reads, process execution, HTTP requests, mobility, stage awareness, and runtime capability inspection.
 
 ## 4. Mobility Semantics
 
@@ -51,9 +53,11 @@ Move serializes the current source code and deploys it to another node, then rem
 
 In both cases, the agent source is re-sent as text over the protocol. The destination node does not need shared state with the source node beyond the authenticated message it receives.
 
+In the current CLI workflow, an operator may also launch an agent from a local stage. The stage is a temporary local container that sends the agent to the target and waits for it to return. This makes agent travel observable and easy to test without requiring a permanently running orchestration layer.
+
 ## 5. Federation
 
-Federation is represented as a tree. Each node knows its children through static configuration. The runtime exposes a networks primitive so that an agent can inspect the currently configured topology and decide how to traverse it. A tree structure is sufficient for many enterprise or laboratory deployments where containers are arranged by office, team, department, or rack.
+Federation is represented as a tree. Each node knows its children through static configuration. The runtime exposes a networks primitive so that an agent can inspect the currently configured topology and decide how to traverse it. A tree structure is sufficient for many enterprise or laboratory deployments where containers are arranged by office, team, department, or rack. A stage may appear to the agent as the root of a temporary local tree that includes the immediate target container.
 
 ## 6. Reasoning and External LLMs
 
@@ -67,16 +71,16 @@ The trust bootstrap for a newly arriving agent is intentionally simple: the mess
 
 ## 8. Example Deployment
 
-Consider a laboratory with one root node and two departmental nodes. Each node exposes local documents. A travelling scout agent is deployed on the root node with the query "chess". It searches locally, inspects the federation tree, clones itself into each child, and collects distributed findings close to where the documents live. The same pattern can be generalized to indexing, compliance inspection, software inventory, or environment diagnostics.
+Consider a laboratory with one root node and two departmental nodes. Each node exposes local documents. A travelling scout agent is deployed on the root node with the query "chess". It searches locally, inspects the federation tree, clones itself into each child, and collects distributed findings close to where the documents live. A second demonstration agent can be launched from a local stage, inspect the primitives and resources exposed by a destination container, and return automatically to the stage with its report. The same pattern can be generalized to indexing, compliance inspection, software inventory, or environment diagnostics.
 
 ## 9. Implementation in This Repository
 
 The repository includes:
 
 - a Python asyncio server implementing the TCP protocol;
-- a client CLI for deploy and invocation;
+- a unified CLI for service startup, local stage launch, sending, and invocation;
 - a dynamic runtime and agent registry;
-- a mobile example agent;
+- a mobile example agent catalog;
 - Docker Compose topology for multi-node testing;
 - automated tests for the core flows.
 
@@ -89,8 +93,9 @@ The natural roadmap includes:
 - stronger identity and artifact signatures;
 - persistent agent state and event logs;
 - discovery and governance for larger federations;
-- richer result routing and aggregation primitives.
+- richer result routing and aggregation primitives;
+- more explicit public/private key distribution for trusted container operators.
 
 ## Conclusion
 
-agentcontainer proposes a simple but expressive model: move authenticated executable agents to the data, provide them with explicit operational primitives, and leave reasoning-provider choice to the agent itself. The result is a compact substrate for experiments in mobile AI systems, edge automation, and distributed agent orchestration.
+agentcontainer proposes a simple but expressive model: move authenticated executable agents to the data, provide them with explicit operational primitives, and leave reasoning-provider choice to the agent itself. With the addition of stage-based workflows, the system also gives operators a practical way to launch, observe, and receive mobile agents during experiments. The result is a compact substrate for work on mobile AI systems, edge automation, and distributed agent orchestration.
