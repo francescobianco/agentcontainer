@@ -24,6 +24,18 @@ class Agent:
 
     # This helper traverses the visible dynamic tree using the local map.
     async def _walk(self, ctx, payload):
+        # If the agent is back on its stage container, stop immediately and
+        # expose the final state instead of restarting the traversal.
+        stage = await ctx.stage()
+        if stage and ctx.container_name == stage.get("name"):
+            return {
+                "status": "returned-to-stage",
+                "container": ctx.container_name,
+                "visited_map": dict(self.visited_map),
+                "travel_log": list(self.travel_log),
+                "payload": payload,
+            }
+
         # Restore the visited map carried by the agent payload, if any.
         incoming_map = payload.get("visited_map", {})
         if incoming_map:

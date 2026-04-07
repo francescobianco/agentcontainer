@@ -118,10 +118,12 @@ async def _start_runtime_server(config: Config) -> tuple[AgentRuntime, asyncio.b
 async def _wait_for_return(runtime: AgentRuntime, agent_id: str, timeout: float | None) -> None:
     print("Stage active. Press Ctrl+C to destroy it or wait for the agent to return.", flush=True)
     start = asyncio.get_running_loop().time()
+    base_agent_id = agent_id.split("#", 1)[0]
     while True:
-        if agent_id in runtime.agents:
-            print(f"Agent {agent_id} returned to the stage. Stopping automatically.", flush=True)
-            return
+        for returned_id in runtime.agents:
+            if returned_id == agent_id or returned_id.split("#", 1)[0] == base_agent_id:
+                print(f"Agent {returned_id} returned to the stage. Stopping automatically.", flush=True)
+                return
         if timeout is not None and (asyncio.get_running_loop().time() - start) >= timeout:
             print("Stage timeout reached. Stopping stage.", flush=True)
             return
@@ -186,9 +188,10 @@ async def _stage_and_send(
         identity = ensure_identity_config(Path.cwd())
         stage_secret = secrets.token_hex(16)
         stage_network = _build_stage_network(stage_name, stage_host, stage_port, target_name, target_host, target_port)
+        stage_bind_host = "127.0.0.1" if stage_host in {"127.0.0.1", "localhost"} else "0.0.0.0"
         stage_config = Config(
             container_name=stage_name,
-            listen_host="127.0.0.1",
+            listen_host=stage_bind_host,
             listen_port=stage_port,
             admin_secret=stage_secret,
             data_root=tmp,
@@ -253,7 +256,7 @@ async def _run_server(args: argparse.Namespace) -> None:
     runtime.log(f"listening on {config.listen_host}:{config.listen_port}")
     async with server:
         if config.parent_target:
-            for attempt in range(1, 16):
+            for attempt in range(1, 4):
                 try:
                     response = await runtime.attach_to_parent()
                     if response and response.get("status") == "ok":
@@ -261,7 +264,8 @@ async def _run_server(args: argparse.Namespace) -> None:
                         break
                 except Exception as exc:  # noqa: BLE001
                     runtime.log(f"attach attempt {attempt} to parent {config.parent_target} failed: {exc}")
-                    await asyncio.sleep(1.0)
+                    if attempt < 3:
+                        await asyncio.sleep(5.0)
         await server.serve_forever()
 
 

@@ -44,7 +44,7 @@ class AgentContext:
     async def networks(self) -> dict[str, Any]:
         record = self._runtime.agents[self.agent_id]
         self._runtime.log_agent_event(self.agent_id, "read network topology")
-        return self._runtime.effective_network(record)
+        return self._runtime.current_network(record)
 
     async def capabilities(self) -> list[str]:
         self._runtime.log_agent_event(self.agent_id, "inspected capabilities")
@@ -330,6 +330,11 @@ class AgentRuntime:
 
         return inject(overlay)
 
+    def current_network(self, record: AgentRecord) -> dict[str, Any]:
+        network = self.effective_network(record)
+        current = self._find_destination(self.config.container_name, network)
+        return current
+
     async def dispatch_agent(
         self,
         *,
@@ -359,6 +364,8 @@ class AgentRuntime:
         activate_payload: dict[str, Any],
     ) -> dict[str, Any]:
         record = self.resolve_agent_record(agent_id)
+        next_metadata = dict(record.metadata)
+        next_metadata["network"] = self.effective_network(record)
         node = self._find_destination(destination, self.effective_network(record))
         message = {
             "type": "receive_agent",
@@ -372,11 +379,11 @@ class AgentRuntime:
                 "agent_hmac": compute_agent_hmac(
                     record.source_code,
                     activate_payload,
-                    record.metadata,
+                    next_metadata,
                     mode,
                     record.secret,
                 ),
-                "agent_metadata": record.metadata,
+                "agent_metadata": next_metadata,
             },
         }
         signed = attach_signature(message, self.identity)

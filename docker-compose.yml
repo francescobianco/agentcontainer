@@ -3,6 +3,8 @@ services:
     build: .
     container_name: agentcontainer-root
     working_dir: /app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - .:/app
     command:
@@ -26,6 +28,8 @@ services:
     build: .
     container_name: agentcontainer-department-a
     working_dir: /app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - .:/app
     command:
@@ -53,6 +57,8 @@ services:
     build: .
     container_name: agentcontainer-department-b
     working_dir: /app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - .:/app
     command:
@@ -80,6 +86,8 @@ services:
     build: .
     container_name: agentcontainer-lab-c
     working_dir: /app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - .:/app
     command:
