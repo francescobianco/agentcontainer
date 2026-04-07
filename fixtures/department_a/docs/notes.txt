@@ -1,0 +1,2 @@
+Nel dipartimento A esiste un archivio di tornei di scacchi.
+Le partite storiche vengono catalogate ogni settimana.

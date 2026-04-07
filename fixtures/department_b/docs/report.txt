@@ -1,0 +1,2 @@
+Il dipartimento B custodisce documentazione tecnica.
+Una sezione speciale tratta robotica e scacchi computazionali.

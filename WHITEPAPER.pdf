@@ -1,0 +1,344 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 5 0 R 7 0 R] /Count 3 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 3381 >>
+stream
+BT
+/F1 10 Tf
+1 0 0 1 72 760 Tm
+(# agentcontainer Whitepaper) Tj
+1 0 0 1 72 746 Tm
+() Tj
+1 0 0 1 72 732 Tm
+(## Abstract) Tj
+1 0 0 1 72 718 Tm
+() Tj
+1 0 0 1 72 704 Tm
+(agentcontainer is a transport and execution substrate for mobile software agents represented) Tj
+1 0 0 1 72 690 Tm
+(as authenticated Python source files. Each agent carries its own identity and secret, can be) Tj
+1 0 0 1 72 676 Tm
+(deployed as live code into a remote TCP container, and can later clone or move across a) Tj
+1 0 0 1 72 662 Tm
+(federated tree of containers. The container provides operating primitives, not an) Tj
+1 0 0 1 72 648 Tm
+(opinionated LLM backend. This decoupling allows agents to remain autonomous in their choice) Tj
+1 0 0 1 72 634 Tm
+(of reasoning engines and external APIs.) Tj
+1 0 0 1 72 620 Tm
+() Tj
+1 0 0 1 72 606 Tm
+(## 1. Problem Statement) Tj
+1 0 0 1 72 592 Tm
+() Tj
+1 0 0 1 72 578 Tm
+(Modern AI systems are usually centralized around a fixed inference endpoint and a) Tj
+1 0 0 1 72 564 Tm
+(server-side orchestration layer. That model is effective for many SaaS architectures, but it) Tj
+1 0 0 1 72 550 Tm
+(is less effective for environments where:) Tj
+1 0 0 1 72 536 Tm
+() Tj
+1 0 0 1 72 522 Tm
+(- data is physically distributed across departments, labs, or edge nodes;) Tj
+1 0 0 1 72 508 Tm
+(- movement of lightweight logic is cheaper than movement of entire datasets;) Tj
+1 0 0 1 72 494 Tm
+(- agents need local system access near the data they inspect;) Tj
+1 0 0 1 72 480 Tm
+(- operators want a neutral substrate instead of a monolithic "AI platform".) Tj
+1 0 0 1 72 466 Tm
+() Tj
+1 0 0 1 72 452 Tm
+(agentcontainer addresses this by defining a node that accepts authenticated Python agents as) Tj
+1 0 0 1 72 438 Tm
+(text, loads them dynamically, and gives them a set of explicit host primitives for file) Tj
+1 0 0 1 72 424 Tm
+(access, process execution, HTTP egress, and mobility.) Tj
+1 0 0 1 72 410 Tm
+() Tj
+1 0 0 1 72 396 Tm
+(## 2. Design Principles) Tj
+1 0 0 1 72 382 Tm
+() Tj
+1 0 0 1 72 368 Tm
+(The system follows five principles.) Tj
+1 0 0 1 72 354 Tm
+() Tj
+1 0 0 1 72 340 Tm
+(First, every message is explicitly authenticated. Authentication is part of the application) Tj
+1 0 0 1 72 326 Tm
+(payload model, not an external session.) Tj
+1 0 0 1 72 312 Tm
+() Tj
+1 0 0 1 72 298 Tm
+(Second, the agent is the portable unit. The source file is not merely a script uploaded to a) Tj
+1 0 0 1 72 284 Tm
+(server; it is the identity-bearing artifact that can survive relocation.) Tj
+1 0 0 1 72 270 Tm
+() Tj
+1 0 0 1 72 256 Tm
+(Third, the container is intentionally neutral regarding LLM providers. Agents may call) Tj
+1 0 0 1 72 242 Tm
+(external reasoning services, but the container itself does not own the model contract.) Tj
+1 0 0 1 72 228 Tm
+() Tj
+1 0 0 1 72 214 Tm
+(Fourth, federation is hierarchical. A tree is operationally simpler than a full mesh and) Tj
+1 0 0 1 72 200 Tm
+(maps well to organizations such as departments, labs, and workstations.) Tj
+1 0 0 1 72 186 Tm
+() Tj
+1 0 0 1 72 172 Tm
+(Fifth, the first implementation should optimize for conceptual clarity. Stronger isolation,) Tj
+1 0 0 1 72 158 Tm
+(policy, and cryptographic identity can be layered later.) Tj
+1 0 0 1 72 144 Tm
+() Tj
+1 0 0 1 72 130 Tm
+(## 3. System Model) Tj
+1 0 0 1 72 116 Tm
+() Tj
+1 0 0 1 72 102 Tm
+(An agentcontainer node exposes a TCP port. Clients and agents send JSON Lines messages. Each) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 6 0 R >>
+endobj
+6 0 obj
+<< /Length 3214 >>
+stream
+BT
+/F1 10 Tf
+1 0 0 1 72 760 Tm
+(message contains a timestamp, a nonce, a sender identity, a payload, and an HMAC signature.) Tj
+1 0 0 1 72 746 Tm
+(Administrative messages are authenticated with an admin secret. Agent mobility messages are) Tj
+1 0 0 1 72 732 Tm
+(authenticated with the secret embedded in the agent source.) Tj
+1 0 0 1 72 718 Tm
+() Tj
+1 0 0 1 72 704 Tm
+(The node maintains an in-memory registry of live agents. An agent source file defines at) Tj
+1 0 0 1 72 690 Tm
+(minimum:) Tj
+1 0 0 1 72 676 Tm
+() Tj
+1 0 0 1 72 662 Tm
+(- AGENT_ID) Tj
+1 0 0 1 72 648 Tm
+(- AGENT_SECRET) Tj
+1 0 0 1 72 634 Tm
+(- Agent class) Tj
+1 0 0 1 72 620 Tm
+() Tj
+1 0 0 1 72 606 Tm
+(The Agent class may implement an activation hook and a message handler. Once loaded, the) Tj
+1 0 0 1 72 592 Tm
+(agent receives a runtime context object that exposes host primitives.) Tj
+1 0 0 1 72 578 Tm
+() Tj
+1 0 0 1 72 564 Tm
+(## 4. Mobility Semantics) Tj
+1 0 0 1 72 550 Tm
+() Tj
+1 0 0 1 72 536 Tm
+(Mobility is expressed by two primitives.) Tj
+1 0 0 1 72 522 Tm
+() Tj
+1 0 0 1 72 508 Tm
+(Clone creates a new live copy of the current agent on another node while preserving the) Tj
+1 0 0 1 72 494 Tm
+(current local instance.) Tj
+1 0 0 1 72 480 Tm
+() Tj
+1 0 0 1 72 466 Tm
+(Move serializes the current source code and deploys it to another node, then removes the) Tj
+1 0 0 1 72 452 Tm
+(local instance after successful activation on the destination.) Tj
+1 0 0 1 72 438 Tm
+() Tj
+1 0 0 1 72 424 Tm
+(In both cases, the agent source is re-sent as text over the protocol. The destination node) Tj
+1 0 0 1 72 410 Tm
+(does not need shared state with the source node beyond the authenticated message it) Tj
+1 0 0 1 72 396 Tm
+(receives.) Tj
+1 0 0 1 72 382 Tm
+() Tj
+1 0 0 1 72 368 Tm
+(## 5. Federation) Tj
+1 0 0 1 72 354 Tm
+() Tj
+1 0 0 1 72 340 Tm
+(Federation is represented as a tree. Each node knows its children through static) Tj
+1 0 0 1 72 326 Tm
+(configuration. The runtime exposes a networks primitive so that an agent can inspect the) Tj
+1 0 0 1 72 312 Tm
+(currently configured topology and decide how to traverse it. A tree structure is sufficient) Tj
+1 0 0 1 72 298 Tm
+(for many enterprise or laboratory deployments where containers are arranged by office, team,) Tj
+1 0 0 1 72 284 Tm
+(department, or rack.) Tj
+1 0 0 1 72 270 Tm
+() Tj
+1 0 0 1 72 256 Tm
+(## 6. Reasoning and External LLMs) Tj
+1 0 0 1 72 242 Tm
+() Tj
+1 0 0 1 72 228 Tm
+(The system deliberately separates orchestration from inference. agentcontainer is not an LLM) Tj
+1 0 0 1 72 214 Tm
+(gateway. Instead, an agent can hold its own API secret and directly call an external) Tj
+1 0 0 1 72 200 Tm
+(reasoning service through the host HTTP primitive or its own imported libraries. This) Tj
+1 0 0 1 72 186 Tm
+(separation prevents the container from becoming a bottleneck for model selection, key) Tj
+1 0 0 1 72 172 Tm
+(management, or provider-specific assumptions.) Tj
+1 0 0 1 72 158 Tm
+() Tj
+1 0 0 1 72 144 Tm
+(## 7. Security Discussion) Tj
+1 0 0 1 72 130 Tm
+() Tj
+1 0 0 1 72 116 Tm
+(The implemented base offers message integrity and straightforward authentication, but it) Tj
+1 0 0 1 72 102 Tm
+(does not claim hardened isolation. Dynamic Python execution is inherently powerful and) Tj
+ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 8 0 R >>
+endobj
+8 0 obj
+<< /Length 3107 >>
+stream
+BT
+/F1 10 Tf
+1 0 0 1 72 760 Tm
+(therefore dangerous if untrusted code can enter the system. The current design should be) Tj
+1 0 0 1 72 746 Tm
+(treated as a trusted-environment prototype suitable for labs, internal networks, or) Tj
+1 0 0 1 72 732 Tm
+(controlled experiments.) Tj
+1 0 0 1 72 718 Tm
+() Tj
+1 0 0 1 72 704 Tm
+(The trust bootstrap for a newly arriving agent is intentionally simple: the message is) Tj
+1 0 0 1 72 690 Tm
+(validated using the secret transported with the agent. This is enough for a first) Tj
+1 0 0 1 72 676 Tm
+(demonstrator but not enough for hostile networks. A production system should move toward) Tj
+1 0 0 1 72 662 Tm
+(public-key identities, signed artifacts, policy engines, and sandboxed execution.) Tj
+1 0 0 1 72 648 Tm
+() Tj
+1 0 0 1 72 634 Tm
+(## 8. Example Deployment) Tj
+1 0 0 1 72 620 Tm
+() Tj
+1 0 0 1 72 606 Tm
+(Consider a laboratory with one root node and two departmental nodes. Each node exposes local) Tj
+1 0 0 1 72 592 Tm
+(documents. A travelling scout agent is deployed on the root node with the query "scacchi".) Tj
+1 0 0 1 72 578 Tm
+(It searches locally, inspects the federation tree, clones itself into each child, and) Tj
+1 0 0 1 72 564 Tm
+(collects distributed findings close to where the documents live. The same pattern can be) Tj
+1 0 0 1 72 550 Tm
+(generalized to indexing, compliance inspection, software inventory, or environment) Tj
+1 0 0 1 72 536 Tm
+(diagnostics.) Tj
+1 0 0 1 72 522 Tm
+() Tj
+1 0 0 1 72 508 Tm
+(## 9. Implementation in This Repository) Tj
+1 0 0 1 72 494 Tm
+() Tj
+1 0 0 1 72 480 Tm
+(The repository includes:) Tj
+1 0 0 1 72 466 Tm
+() Tj
+1 0 0 1 72 452 Tm
+(- a Python asyncio server implementing the TCP protocol;) Tj
+1 0 0 1 72 438 Tm
+(- a client CLI for deploy and invocation;) Tj
+1 0 0 1 72 424 Tm
+(- a dynamic runtime and agent registry;) Tj
+1 0 0 1 72 410 Tm
+(- a mobile example agent;) Tj
+1 0 0 1 72 396 Tm
+(- Docker Compose topology for multi-node testing;) Tj
+1 0 0 1 72 382 Tm
+(- automated tests for the core flows.) Tj
+1 0 0 1 72 368 Tm
+() Tj
+1 0 0 1 72 354 Tm
+(## 10. Future Work) Tj
+1 0 0 1 72 340 Tm
+() Tj
+1 0 0 1 72 326 Tm
+(The natural roadmap includes:) Tj
+1 0 0 1 72 312 Tm
+() Tj
+1 0 0 1 72 298 Tm
+(- capability-based security for primitives;) Tj
+1 0 0 1 72 284 Tm
+(- per-agent sandboxing via subprocesses or microVMs;) Tj
+1 0 0 1 72 270 Tm
+(- stronger identity and artifact signatures;) Tj
+1 0 0 1 72 256 Tm
+(- persistent agent state and event logs;) Tj
+1 0 0 1 72 242 Tm
+(- discovery and governance for larger federations;) Tj
+1 0 0 1 72 228 Tm
+(- richer result routing and aggregation primitives.) Tj
+1 0 0 1 72 214 Tm
+() Tj
+1 0 0 1 72 200 Tm
+(## Conclusion) Tj
+1 0 0 1 72 186 Tm
+() Tj
+1 0 0 1 72 172 Tm
+(agentcontainer proposes a simple but expressive model: move authenticated executable agents) Tj
+1 0 0 1 72 158 Tm
+(to the data, provide them with explicit operational primitives, and leave reasoning-provider) Tj
+1 0 0 1 72 144 Tm
+(choice to the agent itself. The result is a compact substrate for experiments in mobile AI) Tj
+1 0 0 1 72 130 Tm
+(systems, edge automation, and distributed agent orchestration.) Tj
+ET
+endstream
+endobj
+9 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000009 00000 n 
+0000000077 00000 n 
+0000000146 00000 n 
+0000000272 00000 n 
+0000003705 00000 n 
+0000003831 00000 n 
+0000007097 00000 n 
+0000007223 00000 n 
+0000010382 00000 n 
+trailer
+<< /Size 10 /Root 9 0 R >>
+startxref
+10431
+%%EOF

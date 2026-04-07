@@ -1,0 +1,31 @@
+services:
+  root:
+    build: .
+    container_name: agentcontainer-root
+    command: ["python", "-m", "agentcontainer.server", "--config", "/app/examples/root.json"]
+    ports:
+      - "7000:7000"
+    networks:
+      - agentnet
+
+  department-a:
+    build: .
+    container_name: agentcontainer-department-a
+    command: ["python", "-m", "agentcontainer.server", "--config", "/app/examples/department_a.json"]
+    ports:
+      - "7001:7001"
+    networks:
+      - agentnet
+
+  department-b:
+    build: .
+    container_name: agentcontainer-department-b
+    command: ["python", "-m", "agentcontainer.server", "--config", "/app/examples/department_b.json"]
+    ports:
+      - "7002:7002"
+    networks:
+      - agentnet
+
+networks:
+  agentnet:
+    driver: bridge
