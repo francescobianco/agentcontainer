@@ -172,3 +172,97 @@ def test_cli_server_short_syntax():
     args = parse_args(["server", "0.0.0.0:7007"])
     assert args.command == "server"
     assert args.address == "0.0.0.0:7007"
+
+
+def test_agent_can_return_to_stage():
+    async def scenario():
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            stage_dir = base / "stage"
+            target_dir = base / "target"
+            stage_dir.mkdir(parents=True)
+            target_dir.mkdir(parents=True)
+
+            identity = ensure_identity_config(base)
+            source = (Path(__file__).resolve().parents[1] / "agents" / "demo" / "visitcontainer-and-go-back.py").read_text(encoding="utf-8")
+
+            stage_config = Config(
+                container_name="stage",
+                listen_host="127.0.0.1",
+                listen_port=7110,
+                admin_secret="unused",
+                data_root=str(stage_dir),
+                federation={
+                    "name": "stage",
+                    "host": "127.0.0.1",
+                    "port": 7110,
+                    "children": [{"name": "target", "host": "127.0.0.1", "port": 7111, "children": []}],
+                },
+            )
+            target_config = Config(
+                container_name="target",
+                listen_host="127.0.0.1",
+                listen_port=7111,
+                admin_secret="unused",
+                data_root=str(target_dir),
+                federation={"name": "target", "host": "127.0.0.1", "port": 7111, "children": []},
+            )
+
+            stage_runtime, stage_server = await start_runtime(stage_config, identity)
+            target_runtime, target_server = await start_runtime(target_config, identity)
+
+            async with stage_server, target_server:
+                deploy = await send_message(
+                    "127.0.0.1",
+                    7110,
+                    signed(
+                        identity,
+                        "deploy_agent",
+                        {
+                            "source_code": source,
+                            "activate_payload": None,
+                            "agent_metadata": {
+                                "stage": {"name": "stage", "host": "127.0.0.1", "port": 7110},
+                                "network": {
+                                    "name": "stage",
+                                    "host": "127.0.0.1",
+                                    "port": 7110,
+                                    "children": [{"name": "target", "host": "127.0.0.1", "port": 7111, "children": []}],
+                                },
+                            },
+                        },
+                    ),
+                )
+                assert deploy["status"] == "ok"
+
+                dispatch = await send_message(
+                    "127.0.0.1",
+                    7110,
+                    signed(
+                        identity,
+                        "dispatch_agent",
+                        {
+                            "agent_id": "visitcontainer-and-go-back",
+                            "destination": "target",
+                            "mode": "move",
+                            "activate_payload": {},
+                            "metadata_patch": {
+                                "stage": {"name": "stage", "host": "127.0.0.1", "port": 7110},
+                                "network": {
+                                    "name": "stage",
+                                    "host": "127.0.0.1",
+                                    "port": 7110,
+                                    "children": [{"name": "target", "host": "127.0.0.1", "port": 7111, "children": []}],
+                                },
+                            },
+                        },
+                    ),
+                )
+                assert dispatch["status"] == "ok"
+                assert "visitcontainer-and-go-back" in stage_runtime.agents
+                assert "visitcontainer-and-go-back" not in target_runtime.agents
+                returned = stage_runtime.agents["visitcontainer-and-go-back"].last_result
+                assert returned["status"] == "returned-to-stage"
+                assert returned["report"]["container"] == "target"
+
+    asyncio.run(scenario())

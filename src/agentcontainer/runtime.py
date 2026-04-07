@@ -315,7 +315,9 @@ class AgentRuntime:
         signed = attach_signature(message, self.identity)
         response = await self._send_remote(node["host"], int(node["port"]), signed)
         if mode == "move" and response.get("status") == "ok":
-            self.agents.pop(agent_id, None)
+            current = self.agents.get(agent_id)
+            if current is record:
+                self.agents.pop(agent_id, None)
         return response
 
     def _find_destination(self, destination: str, network: dict[str, Any] | None = None) -> dict[str, Any]:

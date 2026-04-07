@@ -113,24 +113,37 @@ def _extract_return_report(response: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _print_stage_summary(label: str, response: dict[str, Any]) -> None:
+    def find_return_report(payload: Any) -> dict[str, Any] | None:
+        if isinstance(payload, dict):
+            if isinstance(payload.get("report"), dict):
+                return payload["report"]
+            for value in payload.values():
+                found = find_return_report(value)
+                if found is not None:
+                    return found
+        if isinstance(payload, list):
+            for value in payload:
+                found = find_return_report(value)
+                if found is not None:
+                    return found
+        return None
+
     status = response.get("status", "unknown")
     if status != "ok":
         print(f"{label}: errore: {response.get('error', 'unknown error')}", flush=True)
         return
     result = response.get("result", {})
     agent_id = result.get("agent_id", "?")
-    activate = result.get("activate_result")
     print(f"{label}: ok agent={agent_id}", flush=True)
-    if isinstance(activate, dict):
-        report = activate.get("report")
-        if isinstance(report, dict):
-            container_name = report.get("container", "?")
-            capabilities = report.get("capabilities", [])
-            files = report.get("resources", {}).get("files", [])
-            print(
-                f"ritorno: container={container_name} primitive={len(capabilities)} files={len(files)}",
-                flush=True,
-            )
+    report = find_return_report(result)
+    if isinstance(report, dict):
+        container_name = report.get("container", "?")
+        capabilities = report.get("capabilities", [])
+        files = report.get("resources", {}).get("files", [])
+        print(
+            f"ritorno: container={container_name} primitive={len(capabilities)} files={len(files)}",
+            flush=True,
+        )
 
 
 async def _stage_and_send(
