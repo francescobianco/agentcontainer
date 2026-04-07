@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import socket
 import subprocess
 import tempfile
@@ -44,14 +43,91 @@ def _generate_keypair(identity: str) -> tuple[dict[str, str], dict[str, str]]:
         return private_key, public_key
 
 
-def load_identity_config(directory: Path) -> IdentityConfig:
-    path = directory / IDENTITY_FILE
-    raw = json.loads(path.read_text(encoding="utf-8"))
+def _extract_identity_from_public_key(public_key: str) -> str:
+    parts = public_key.strip().split()
+    if len(parts) >= 3:
+        return parts[2]
+    return default_identity_name()
+
+
+def _public_key_from_private_key(private_key_text: str) -> dict[str, str]:
+    with tempfile.TemporaryDirectory(prefix="agentcontainer-pubkey-") as tmp:
+        tmp_path = Path(tmp)
+        key_path = tmp_path / "id_ed25519"
+        key_path.write_text(private_key_text, encoding="utf-8")
+        key_path.chmod(0o600)
+        result = subprocess.run(
+            ["ssh-keygen", "-y", "-f", str(key_path)],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        public_key = result.stdout.strip()
+        return {
+            "identity": _extract_identity_from_public_key(public_key),
+            "public_key": public_key,
+        }
+
+
+def _serialize_identity_config(config: IdentityConfig) -> str:
+    public_access = "\n".join(entry["public_key"] for entry in config.public_access)
+    return (
+        "[private_key]\n"
+        f"{config.private_key['key'].rstrip()}\n"
+        "\n"
+        "[public_access]\n"
+        f"{public_access}\n"
+    )
+
+
+def _parse_identity_config(text: str, path: Path) -> IdentityConfig:
+    current_section: str | None = None
+    private_key_lines: list[str] = []
+    public_access_lines: list[str] = []
+
+    for raw in text.splitlines():
+        line = raw.rstrip("\n")
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped == "[private_key]":
+            current_section = "private_key"
+            continue
+        if stripped == "[public_access]":
+            current_section = "public_access"
+            continue
+        if current_section == "private_key":
+            private_key_lines.append(line)
+        elif current_section == "public_access":
+            public_access_lines.append(stripped)
+
+    if not private_key_lines:
+        raise ValueError("missing [private_key] section")
+    if not public_access_lines:
+        raise ValueError("missing [public_access] section")
+
+    private_key_text = "\n".join(private_key_lines).strip() + "\n"
+    private_public = _public_key_from_private_key(private_key_text)
     return IdentityConfig(
         path=path,
-        private_key=raw["private_key"],
-        public_access=raw["public_access"],
+        private_key={
+            "identity": private_public["identity"],
+            "key": private_key_text,
+        },
+        public_access=[
+            {
+                "identity": _extract_identity_from_public_key(public_key),
+                "public_key": public_key,
+            }
+            for public_key in public_access_lines
+        ],
     )
+
+
+def load_identity_config(directory: Path) -> IdentityConfig:
+    path = directory / IDENTITY_FILE
+    return _parse_identity_config(path.read_text(encoding="utf-8"), path)
 
 
 def ensure_identity_config(directory: Path) -> IdentityConfig:
@@ -66,9 +142,5 @@ def ensure_identity_config(directory: Path) -> IdentityConfig:
         private_key=private_key,
         public_access=[public_key],
     )
-    payload = {
-        "private_key": config.private_key,
-        "public_access": config.public_access,
-    }
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+    path.write_text(_serialize_identity_config(config), encoding="utf-8")
     return config

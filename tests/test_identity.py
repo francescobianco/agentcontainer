@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import tempfile
 from pathlib import Path
 
@@ -14,11 +13,11 @@ def test_ensure_identity_config_creates_agentcontainer_file():
         path = directory / IDENTITY_FILE
 
         assert path.exists()
-        raw = json.loads(path.read_text(encoding="utf-8"))
-        assert raw["private_key"]["identity"] == config.private_key["identity"]
-        assert "BEGIN OPENSSH PRIVATE KEY" in raw["private_key"]["key"]
-        assert raw["public_access"][0]["identity"] == config.private_key["identity"]
-        assert raw["public_access"][0]["public_key"].startswith("ssh-ed25519 ")
+        raw = path.read_text(encoding="utf-8")
+        assert "[private_key]" in raw
+        assert "[public_access]" in raw
+        assert "BEGIN OPENSSH PRIVATE KEY" in raw
+        assert config.public_access[0]["public_key"] in raw
 
 
 def test_ensure_identity_config_is_idempotent():

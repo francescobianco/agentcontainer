@@ -93,14 +93,14 @@ async def _start_runtime_server(config: Config) -> tuple[AgentRuntime, asyncio.b
 
 
 async def _wait_for_return(runtime: AgentRuntime, agent_id: str, timeout: float | None) -> None:
-    print("Stage attivo. Premi Ctrl+C per distruggerlo oppure attendi il ritorno dell'agente.", flush=True)
+    print("Stage active. Press Ctrl+C to destroy it or wait for the agent to return.", flush=True)
     start = asyncio.get_running_loop().time()
     while True:
         if agent_id in runtime.agents:
-            print(f"L'agente {agent_id} e' rientrato nello stage. Arresto automatico.", flush=True)
+            print(f"Agent {agent_id} returned to the stage. Stopping automatically.", flush=True)
             return
         if timeout is not None and (asyncio.get_running_loop().time() - start) >= timeout:
-            print("Timeout stage raggiunto. Arresto dello stage.", flush=True)
+            print("Stage timeout reached. Stopping stage.", flush=True)
             return
         await asyncio.sleep(0.25)
 
@@ -130,7 +130,7 @@ def _print_stage_summary(label: str, response: dict[str, Any]) -> None:
 
     status = response.get("status", "unknown")
     if status != "ok":
-        print(f"{label}: errore: {response.get('error', 'unknown error')}", flush=True)
+        print(f"{label}: error: {response.get('error', 'unknown error')}", flush=True)
         return
     result = response.get("result", {})
     agent_id = result.get("agent_id", "?")
@@ -141,7 +141,7 @@ def _print_stage_summary(label: str, response: dict[str, Any]) -> None:
         capabilities = report.get("capabilities", [])
         files = report.get("resources", {}).get("files", [])
         print(
-            f"ritorno: container={container_name} primitive={len(capabilities)} files={len(files)}",
+            f"return: container={container_name} primitives={len(capabilities)} files={len(files)}",
             flush=True,
         )
 
@@ -191,10 +191,10 @@ async def _stage_and_send(
                 ),
             )
             if deploy_response.get("status") != "ok":
-                print(f"stage deploy fallito: {deploy_response.get('error', 'unknown error')}", flush=True)
+                print(f"stage deploy failed: {deploy_response.get('error', 'unknown error')}", flush=True)
                 raise SystemExit(1)
             agent_id = deploy_response["result"]["agent_id"]
-            print(f"stage pronto: agent={agent_id} stage={stage_host}:{stage_port}", flush=True)
+            print(f"stage ready: agent={agent_id} stage={stage_host}:{stage_port}", flush=True)
 
             dispatch_response = await send_message(
                 "127.0.0.1",
@@ -215,9 +215,9 @@ async def _stage_and_send(
                 ),
             )
             if dispatch_response.get("status") != "ok":
-                print(f"invio fallito: {dispatch_response.get('error', 'unknown error')}", flush=True)
+                print(f"send failed: {dispatch_response.get('error', 'unknown error')}", flush=True)
                 raise SystemExit(1)
-            _print_stage_summary("invio", dispatch_response)
+            _print_stage_summary("send", dispatch_response)
             await _wait_for_return(stage_runtime, agent_id, timeout)
 
 
@@ -368,11 +368,11 @@ def main(argv: list[str] | None = None) -> None:
             return
         asyncio.run(_run_control(args))
     except KeyboardInterrupt:
-        print("Stage distrutto manualmente.", flush=True)
+        print("Stage destroyed manually.", flush=True)
     except SystemExit:
         raise
     except Exception as exc:  # noqa: BLE001
-        print(f"errore: {exc}", file=sys.stderr, flush=True)
+        print(f"error: {exc}", file=sys.stderr, flush=True)
         raise SystemExit(1) from exc
 
 
