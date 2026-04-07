@@ -5,6 +5,7 @@ import asyncio
 import json
 import secrets
 import socket
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -103,6 +104,34 @@ async def _wait_for_return(runtime: AgentRuntime, agent_id: str, timeout: float 
         await asyncio.sleep(0.25)
 
 
+def _extract_return_report(response: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        return response["result"]["activate_result"]["report"]
+    except (KeyError, TypeError):
+        return None
+
+
+def _print_stage_summary(label: str, response: dict[str, Any]) -> None:
+    status = response.get("status", "unknown")
+    if status != "ok":
+        print(f"{label}: errore: {response.get('error', 'unknown error')}", flush=True)
+        return
+    result = response.get("result", {})
+    agent_id = result.get("agent_id", "?")
+    activate = result.get("activate_result")
+    print(f"{label}: ok agent={agent_id}", flush=True)
+    if isinstance(activate, dict):
+        report = activate.get("report")
+        if isinstance(report, dict):
+            container_name = report.get("container", "?")
+            capabilities = report.get("capabilities", [])
+            files = report.get("resources", {}).get("files", [])
+            print(
+                f"ritorno: container={container_name} primitive={len(capabilities)} files={len(files)}",
+                flush=True,
+            )
+
+
 async def _stage_and_send(
     *,
     source_code: str,
@@ -138,7 +167,7 @@ async def _stage_and_send(
                     stage_secret,
                     {
                         "source_code": source_code,
-                        "activate_payload": {},
+                        "activate_payload": None,
                         "agent_metadata": {
                             "stage": {"name": stage_name, "host": stage_host, "port": stage_port},
                             "network": stage_network,
@@ -146,8 +175,11 @@ async def _stage_and_send(
                     },
                 ),
             )
-            print(json.dumps({"stage_deploy": deploy_response}, indent=2, ensure_ascii=True))
+            if deploy_response.get("status") != "ok":
+                print(f"stage deploy fallito: {deploy_response.get('error', 'unknown error')}", flush=True)
+                raise SystemExit(1)
             agent_id = deploy_response["result"]["agent_id"]
+            print(f"stage pronto: agent={agent_id} stage={stage_host}:{stage_port}", flush=True)
 
             dispatch_response = await send_message(
                 "127.0.0.1",
@@ -167,7 +199,10 @@ async def _stage_and_send(
                     },
                 ),
             )
-            print(json.dumps({"stage_dispatch": dispatch_response}, indent=2, ensure_ascii=True))
+            if dispatch_response.get("status") != "ok":
+                print(f"invio fallito: {dispatch_response.get('error', 'unknown error')}", flush=True)
+                raise SystemExit(1)
+            _print_stage_summary("invio", dispatch_response)
             await _wait_for_return(stage_runtime, agent_id, timeout)
 
 
@@ -317,6 +352,11 @@ def main(argv: list[str] | None = None) -> None:
         asyncio.run(_run_control(args))
     except KeyboardInterrupt:
         print("Stage distrutto manualmente.", flush=True)
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        print(f"errore: {exc}", file=sys.stderr, flush=True)
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":

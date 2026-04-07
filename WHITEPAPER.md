@@ -67,7 +67,7 @@ The trust bootstrap for a newly arriving agent is intentionally simple: the mess
 
 ## 8. Example Deployment
 
-Consider a laboratory with one root node and two departmental nodes. Each node exposes local documents. A travelling scout agent is deployed on the root node with the query "scacchi". It searches locally, inspects the federation tree, clones itself into each child, and collects distributed findings close to where the documents live. The same pattern can be generalized to indexing, compliance inspection, software inventory, or environment diagnostics.
+Consider a laboratory with one root node and two departmental nodes. Each node exposes local documents. A travelling scout agent is deployed on the root node with the query "chess". It searches locally, inspects the federation tree, clones itself into each child, and collects distributed findings close to where the documents live. The same pattern can be generalized to indexing, compliance inspection, software inventory, or environment diagnostics.
 
 ## 9. Implementation in This Repository
 

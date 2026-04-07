@@ -1,33 +1,33 @@
 # agentcontainer
 
-`agentcontainer` e' un runtime TCP per agenti mobili scritti in Python. Ogni agente viene inviato come file Python puro autenticato a livello di messaggio, viene caricato "in vivo" nel container di destinazione e puo' usare primitive host per filesystem, processi locali, rete HTTP e mobilita' tra container federati ad albero.
+`agentcontainer` is a TCP runtime for mobile agents written in Python. Each agent is sent as a pure Python file authenticated at the message level, loaded live into the destination container, and can use host primitives for filesystem access, local processes, HTTP networking, and mobility across federated tree-structured containers.
 
-## Obiettivi
+## Goals
 
-- Trasporto e attivazione di agenti Python come file Python puri.
-- Autenticazione esplicita per ogni messaggio tramite HMAC.
-- Secret dell'agente incorporata nell'agente stesso.
-- Nessuna dipendenza da un provider LLM specifico nel container.
-- Primitive di base per clone, move, networks, filesystem e HTTP.
-- Federazione di `agentcontainer` in topologie ad albero.
-- Ambiente Docker per testare deploy, clonazione, viaggio e ricerca distribuita.
+- Transport and activate Python agents as pure Python files.
+- Provide explicit per-message authentication through HMAC.
+- Keep the agent secret embedded inside the agent itself.
+- Avoid coupling the container to a specific LLM provider.
+- Provide base primitives for clone, move, networks, filesystem, and HTTP.
+- Support `agentcontainer` federation in tree topologies.
+- Provide a Docker environment to test deployment, cloning, travel, and distributed search.
 
-## Stato del progetto
+## Project Status
 
-Questa repository implementa una base funzionante:
+This repository currently implements a working base:
 
-- Server TCP `asyncio` con protocollo JSON Lines.
-- CLI unificata con `server`, `send`, `run`, `invoke`, `tree`.
-- Loader di agenti Python con lifecycle `on_activate` e `on_message`.
-- Primitive host: `read_file`, `search_files`, `run`, `http_request`, `clone`, `move`, `networks`, `capabilities`, `resources`, `return_to_stage`.
-- Federazione statica ad albero via file JSON di configurazione.
-- Agente di esempio `travelling_scout` che visita i nodi e cerca file che contengono una query.
-- Test automatici di autenticazione, deploy/invoke e clone/move.
-- Ambiente `docker compose` con tre container federati.
+- `asyncio` TCP server with a JSON Lines protocol.
+- Unified CLI with `server`, `send`, `run`, `invoke`, and `tree`.
+- Python agent loader with `on_activate` and `on_message` lifecycle hooks.
+- Host primitives: `read_file`, `search_files`, `run`, `http_request`, `clone`, `move`, `networks`, `capabilities`, `resources`, `return_to_stage`.
+- Static tree federation configured through JSON files.
+- Example `travelling_scout` agent that visits nodes and searches files for a query.
+- Automated tests for authentication, deploy/invoke, and clone/move.
+- `docker compose` environment with three federated containers.
 
-## Architettura rapida
+## Quick Architecture
 
-Ogni messaggio e' una riga JSON con struttura:
+Each message is a single JSON line with this structure:
 
 ```json
 {
@@ -40,20 +40,20 @@ Ogni messaggio e' una riga JSON con struttura:
 }
 ```
 
-La firma e' calcolata sul messaggio canonico senza `signature`.
+The signature is computed on the canonical message without `signature`.
 
-Tipi principali:
+Main message types:
 
-- `deploy_agent`: deploy amministrativo di un agente sorgente.
-- `invoke_agent`: invoca un agente gia' attivo.
-- `receive_agent`: ricezione di un agente clonato o spostato.
-- `list_agents`: elenco degli agenti caricati.
-- `describe_container`: metadati del nodo.
-- `network_tree`: topologia federata configurata.
+- `deploy_agent`: administrative deployment of an agent source file.
+- `invoke_agent`: invoke an already active agent.
+- `receive_agent`: reception of an agent that was cloned or moved.
+- `list_agents`: list loaded agents.
+- `describe_container`: node metadata.
+- `network_tree`: configured federation topology.
 
-## Contratto dell'agente
+## Agent Contract
 
-Un agente e' un file Python che definisce almeno:
+An agent is a Python file that defines at least:
 
 ```python
 AGENT_ID = "travelling-scout"
@@ -67,13 +67,13 @@ class Agent:
         ...
 ```
 
-`ctx` espone primitive host e di mobilita'. L'agente porta con se' la propria secret e la usa implicitamente quando il container esegue `clone` o `move`.
+`ctx` exposes host and mobility primitives. The agent carries its own secret and uses it implicitly when the container performs `clone` or `move`.
 
 ## CLI
 
-`agentcontainer` e' anche la CLI utente da installare sul proprio PC per inviare agenti verso nodi remoti. Lo scambio dell'agente resta sempre il sorgente Python puro; stage, routing e autenticazione viaggiano come metadati separati dal file.
+`agentcontainer` is also the user CLI you can install on your workstation to send agents to remote nodes. The agent exchange always remains a pure Python source file; stage, routing, and authentication travel as metadata separate from the file.
 
-Esempi:
+Examples:
 
 ```bash
 agentcontainer server 0.0.0.0:7007
@@ -82,15 +82,15 @@ agentcontainer run agents/demo/visitcontainer-and-go-back.py
 agentcontainer list-agents 127.0.0.1:7007
 ```
 
-`agentcontainer server HOST:PORT` avvia un nodo con configurazione di sviluppo pronta all'uso. `agentcontainer send AGENTE.py HOST:PORT` apre automaticamente uno stage locale, spedisce il file Python puro al nodo remoto e resta appeso finche' l'agente non torna allo stage oppure finche' non premi `Ctrl+C`. `agentcontainer run AGENTE.py` fa la stessa cosa ma crea anche un nodo sandbox locale di destinazione, utile per test rapidi.
+`agentcontainer server HOST:PORT` starts a node with a ready-to-use development configuration. `agentcontainer send AGENT.py HOST:PORT` automatically opens a local stage, ships the pure Python file to the remote node, and waits until the agent returns to the stage or until you press `Ctrl+C`. `agentcontainer run AGENT.py` does the same thing but also creates a local sandbox destination node for quick testing.
 
-Per avviare un nodo come servizio:
+To start a node as a service:
 
 ```bash
 agentcontainer server 0.0.0.0:7007
 ```
 
-## Avvio locale
+## Local Startup
 
 ```bash
 make install
@@ -98,72 +98,74 @@ pytest -q
 agentcontainer server 0.0.0.0:7007
 ```
 
-In un altro terminale:
+`make install` uses `pipx` when available, which is the correct choice on systems that enforce PEP 668. If `pipx` is not available, it creates `.venv/` and a local `./bin/agentcontainer` wrapper.
+
+In another terminal:
 
 ```bash
 agentcontainer send agents/demo/visitcontainer-and-go-back.py 0.0.0.0:7007
 ```
 
-Se il nodo remoto deve richiamare il tuo stage attraverso un IP diverso da quello rilevato automaticamente, usa `--stage-host`.
+If the remote node must call back into your stage through a different IP than the one detected automatically, use `--stage-host`.
 
-## Ambiente Docker federato
+## Federated Docker Environment
 
-Avvio:
+Start it with:
 
 ```bash
 docker compose up --build
 ```
 
-Deploy dell'agente sul nodo root:
+Deploy the agent to the root node:
 
 ```bash
 agentcontainer send agents/demo/visitcontainer-and-go-back.py 127.0.0.1:7000 --secret root-admin-secret
 ```
 
-Lista agenti:
+List agents:
 
 ```bash
 agentcontainer list-agents 127.0.0.1:7000 --secret root-admin-secret
 ```
 
-Topologia:
+Topology:
 
 ```bash
 agentcontainer tree 127.0.0.1:7000 --secret root-admin-secret
 ```
 
-## Demo prevista
+## Planned Demo
 
-I container Docker montano dataset differenti:
+The Docker containers mount different datasets:
 
-- `root`: documenti generali.
-- `department-a`: documenti con riferimenti agli scacchi.
-- `department-b`: documenti tecnici e un altro riferimento agli scacchi.
+- `root`: general documents.
+- `department-a`: documents that mention chess.
+- `department-b`: technical documents and another chess-related reference.
 
-L'agente `travelling_scout`:
+The `travelling_scout` agent:
 
-- cerca la query localmente;
-- legge l'albero federato;
-- clona se stesso nei figli non ancora visitati;
-- puo' muoversi in un nodo specifico;
-- accumula risultati in memoria locale e li restituisce via `invoke`.
+- searches the query locally;
+- reads the federated tree;
+- clones itself into children that have not yet been visited;
+- can move to a specific node;
+- accumulates local results and returns them through `invoke`.
 
-L'agente [visitcontainer-and-go-back.py](/home/francesco/Develop/_/agentcontainer/agents/demo/visitcontainer-and-go-back.py):
+The agent [visitcontainer-and-go-back.py](/home/francesco/Develop/_/agentcontainer/agents/demo/visitcontainer-and-go-back.py):
 
-- arriva nel container target;
-- legge primitive e risorse esposte agli agenti;
-- prepara un report;
-- torna allo stage da cui era partito;
-- fa terminare automaticamente la CLI `send` o `run` quando rientra.
+- arrives in the target container;
+- reads the primitives and resources exposed to agents;
+- prepares a report;
+- returns to the stage it came from;
+- automatically ends the `send` or `run` CLI flow when it comes back.
 
-## Sicurezza e limiti della base
+## Security and Current Limits
 
-- Il modello di trust e' volutamente minimale: l'integrita' del messaggio e' garantita dall'HMAC, ma il primo `receive_agent` su un nodo nuovo si basa sulla secret trasportata dall'agente.
-- Il runtime esegue codice Python dinamico: va usato solo in ambienti fidati o molto isolati.
-- Le primitive locali sono potenti. In produzione e' necessario introdurre sandbox per processo, quote, ACL, auditing e policy per network e filesystem.
-- La federazione nella base e' statica via configurazione; discovery dinamica e PKI non sono incluse.
+- The trust model is intentionally minimal: message integrity is guaranteed by HMAC, but the first `receive_agent` on a new node relies on the secret transported by the agent.
+- The runtime executes dynamic Python code: it should only be used in trusted or strongly isolated environments.
+- Local primitives are powerful. Production usage requires process sandboxing, quotas, ACLs, auditing, and network/filesystem policy controls.
+- Federation in the current base is static and configuration-driven; dynamic discovery and PKI are not included.
 
-## File principali
+## Main Files
 
 - [README.md](/home/francesco/Develop/_/agentcontainer/README.md)
 - [DESIGN.md](/home/francesco/Develop/_/agentcontainer/DESIGN.md)
@@ -171,14 +173,14 @@ L'agente [visitcontainer-and-go-back.py](/home/francesco/Develop/_/agentcontaine
 - [src/agentcontainer/server.py](/home/francesco/Develop/_/agentcontainer/src/agentcontainer/server.py)
 - [src/agentcontainer/runtime.py](/home/francesco/Develop/_/agentcontainer/src/agentcontainer/runtime.py)
 - [src/agentcontainer/client.py](/home/francesco/Develop/_/agentcontainer/src/agentcontainer/client.py)
-- [agents/travelling_scout.py](/home/francesco/Develop/_/agentcontainer/agents/travelling_scout.py)
+- [agents/demo/travelling_scout.py](/home/francesco/Develop/_/agentcontainer/agents/demo/travelling_scout.py)
 - [docker-compose.yml](/home/francesco/Develop/_/agentcontainer/docker-compose.yml)
 - [scripts/generate_whitepaper_pdf.py](/home/francesco/Develop/_/agentcontainer/scripts/generate_whitepaper_pdf.py)
 - [WHITEPAPER.pdf](/home/francesco/Develop/_/agentcontainer/WHITEPAPER.pdf)
 
 ## Whitepaper
 
-Il whitepaper sorgente e' in [WHITEPAPER.md](/home/francesco/Develop/_/agentcontainer/WHITEPAPER.md) e il PDF viene generato con:
+The whitepaper source is in [WHITEPAPER.md](/home/francesco/Develop/_/agentcontainer/WHITEPAPER.md), and the PDF is generated with:
 
 ```bash
 python3 scripts/generate_whitepaper_pdf.py

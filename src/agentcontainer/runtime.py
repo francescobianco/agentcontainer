@@ -216,9 +216,9 @@ class AgentRuntime:
             metadata={"agent_name": manifest["agent_name"], **(metadata or {})},
         )
         self.agents[record.agent_id] = record
-        if hasattr(instance, "on_activate"):
+        if activate_payload is not None and hasattr(instance, "on_activate"):
             ctx = AgentContext(self, record.agent_id)
-            record.last_result = await instance.on_activate(ctx, activate_payload or {})
+            record.last_result = await instance.on_activate(ctx, activate_payload)
         return {"agent_id": record.agent_id, "status": "active", "activate_result": record.last_result}
 
     async def invoke_agent(self, agent_id: str, message: dict[str, Any]) -> dict[str, Any]:
@@ -349,7 +349,7 @@ class AgentRuntime:
         if message_type == "deploy_agent":
             result = await self.deploy_agent(
                 payload["source_code"],
-                payload.get("activate_payload", {}),
+                payload.get("activate_payload"),
                 payload.get("agent_metadata"),
             )
             return {"status": "ok", "result": result}

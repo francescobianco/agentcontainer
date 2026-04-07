@@ -1,12 +1,13 @@
 PYTHON ?= python3
 PIP ?= $(PYTHON) -m pip
+VENV ?= .venv
 
 .PHONY: help install install-venv venv test pdf server-root server-a server-b docker-up docker-down docker-logs demo-send demo-run
 
 help:
 	@printf '%s\n' \
 	'Targets:' \
-	'  install     Install the CLI in the current Python environment' \
+	'  install     Install the CLI with pipx, fallback to .venv + ./bin/agentcontainer' \
 	'  install-venv Create a local virtualenv and install the project there' \
 	'  venv        Create local virtualenv only' \
 	'  test        Run pytest suite' \
@@ -24,10 +25,19 @@ venv:
 	$(PYTHON) -m venv $(VENV)
 
 install:
-	$(PIP) install -e .[dev]
+	@if command -v pipx >/dev/null 2>&1; then \
+		pipx install --force .; \
+		printf '%s\n' 'Installed with pipx. If needed, ensure $$HOME/.local/bin is in PATH.'; \
+	else \
+		$(MAKE) install-venv; \
+	fi
 
 install-venv: venv
 	. $(VENV)/bin/activate && $(PIP) install -e .[dev]
+	@mkdir -p bin
+	@printf '%s\n' '#!/usr/bin/env sh' 'exec "$$(cd "$$(dirname "$$0")"/.. && pwd)/$(VENV)/bin/agentcontainer" "$$@"' > bin/agentcontainer
+	@chmod +x bin/agentcontainer
+	@printf '%s\n' 'Installed in .venv. Use ./bin/agentcontainer or activate .venv.'
 
 test:
 	PYTHONPATH=src pytest -q
