@@ -2,6 +2,8 @@
 
 `agentcontainer` is a TCP runtime for mobile agents written in Python. Each agent is sent as a pure Python file authenticated at the message level, loaded live into the destination container, and can use host primitives for filesystem access, local processes, HTTP networking, and mobility across federated tree-structured containers.
 
+A mobile agent is a software agent that can move between execution environments, continue its work after the move, and autonomously decide where to go next based on the task it has to complete. In practice, that means an agent can inspect one container, move to another because the required data or capability is there, keep executing, and return results only when it has finished the parts of the job that require crossing multiple environments.
+
 ## Goals
 
 - Transport and activate Python agents as pure Python files.
